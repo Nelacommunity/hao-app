@@ -3,7 +3,8 @@ import { router } from 'expo-router';
 import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Colors, Radius, Spacing } from '@/constants/theme';
-import { CategoryMeta, type Place } from '@/data/places';
+import { PlaceThumb } from '@/components/place-thumb';
+import type { Place } from '@/data/places';
 import {
   formatDuration,
   formatMeters,
@@ -40,7 +41,7 @@ export function RouteCard({ place, location, routes, mode, onModeChange, onClose
     const target = { latitude: place.latitude, longitude: place.longitude, name: place.nameZh };
     // Alert has no buttons on web, so open Amap's web map directly there.
     if (Platform.OS === 'web' || MapsApps.length === 1) return openInMaps('amap', target, mode);
-    Alert.alert(t('Navigate with'), `${t(place.name)} · ${place.nameZh}`, [
+    Alert.alert(t('Navigate with'), place.name === place.nameZh ? place.nameZh : `${place.name} · ${place.nameZh}`, [
       ...MapsApps.map(({ app, label }) => ({ text: label, onPress: () => openInMaps(app, target, mode) })),
       { text: t('Cancel'), style: 'cancel' as const },
     ]);
@@ -49,12 +50,10 @@ export function RouteCard({ place, location, routes, mode, onModeChange, onClose
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={[styles.emoji, { backgroundColor: `${CategoryMeta[place.category].color}1A` }]}>
-          <Text style={{ fontSize: 24 }}>{place.emoji}</Text>
-        </View>
+        <PlaceThumb place={place} size={48} />
         <View style={{ flex: 1 }}>
           <Text style={styles.name} numberOfLines={1}>
-            {t(place.name)}
+            {place.name}
           </Text>
           <Text style={styles.nameZh} numberOfLines={1}>
             {place.nameZh}
@@ -137,7 +136,6 @@ export function RouteCard({ place, location, routes, mode, onModeChange, onClose
 const styles = StyleSheet.create({
   card: { paddingHorizontal: Spacing.md, gap: Spacing.md },
   header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  emoji: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   name: { fontSize: 18, fontWeight: '800', color: Colors.ink },
   nameZh: { fontSize: 13, color: Colors.inkSoft, marginTop: 1 },
   close: {

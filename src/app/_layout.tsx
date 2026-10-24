@@ -62,7 +62,8 @@ function RootNavigator() {
         <Stack.Screen name="update-password" options={{ gestureEnabled: false }} />
       </Stack.Protected>
 
-      <Stack.Protected guard={!signedIn}>
+      {/* (tabs) has no index route, so name where a signed-in user lands instead of `/`. */}
+      <Stack.Protected guard={!signedIn} redirectTo={resettingPassword ? '/update-password' : '/home'}>
         <Stack.Screen name="index" />
         <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
         <Stack.Screen name="(auth)" />

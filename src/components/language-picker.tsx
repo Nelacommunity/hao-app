@@ -88,7 +88,7 @@ export function LanguagePicker({ visible, selected, onSelect, onClose }: Props) 
                 </View>
                 <Ionicons name="arrow-forward" size={18} color={Colors.red} />
               </Pressable>
-            ) : null
+            ) : undefined
           }
         />
       </SafeAreaView>

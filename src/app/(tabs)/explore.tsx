@@ -16,14 +16,19 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { CategoryTiles } from '@/components/category-tiles';
 import { PlaceMap } from '@/components/place-map';
+import { PlaceThumb, placeMeta } from '@/components/place-thumb';
 import { RouteCard } from '@/components/route-card';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
-import { CategoryMeta, Cities, Places, type CityId, type PlaceCategory } from '@/data/places';
+import { CategoryMeta, Cities, type CityId, type Place, type PlaceCategory } from '@/data/places';
 import { useDirections, type TravelMode } from '@/lib/directions';
 import { distanceKm, formatDistance, useCurrentLocation } from '@/lib/location';
 import { useT } from '@/lib/i18n';
+import { getCachedPlace, usePlaces } from '@/lib/places';
 
 type Area = CityId | 'nearby';
+
+/** The Explore city a place is in, when it's one of them (AMap gives e.g. 北京市). */
+const cityOf = (place: Place): CityId | undefined => Cities.find((c) => place.cityZh.startsWith(c.nameZh))?.id;
 
 const COLLAPSED = 76; // handle + title row: the whole map stays visible
 const SPRING = { damping: 22, stiffness: 200, mass: 0.8 };
@@ -87,12 +92,12 @@ export default function ExploreScreen() {
 
   // Tapping a place shows the way there from the user's location.
   const [mode, setMode] = useState<TravelMode>('foot');
-  const selectedPlace = Places.find((p) => p.id === selectedId) ?? null;
+  const selectedPlace = (selectedId && getCachedPlace(selectedId)) || null;
   const directions = useDirections(selectedPlace ? here : null, selectedPlace);
   const activeRoute = selectedPlace && here ? (directions.routes[mode] ?? null) : null;
 
   const selectPlace = (id: string) => {
-    const place = Places.find((p) => p.id === id);
+    const place = getCachedPlace(id);
     setSelectedId(id);
     // Walk for short trips, drive for longer ones; the user can switch.
     if (place && here) setMode(distanceKm(here, place) < 1.5 ? 'foot' : 'car');
@@ -104,10 +109,10 @@ export default function ExploreScreen() {
   const [handledRoute, setHandledRoute] = useState<string | undefined>();
   if (params.route && params.route !== handledRoute) {
     setHandledRoute(params.route);
-    const place = Places.find((p) => p.id === params.route);
+    const place = getCachedPlace(params.route);
     if (place) {
       setSelectedId(place.id);
-      setArea(place.city);
+      setArea(cityOf(place) ?? (here ? 'nearby' : area));
       setCategory('all');
       if (here) setMode(distanceKm(here, place) < 1.5 ? 'foot' : 'car');
     }
@@ -115,11 +120,14 @@ export default function ExploreScreen() {
 
   const city = area === 'nearby' ? null : (Cities.find((c) => c.id === area) ?? Cities[0]);
 
-  const places = useMemo(() => {
-    const filtered = Places.filter((p) => (area === 'nearby' || p.city === area) && (category === 'all' || p.category === category));
-    if (area !== 'nearby' || !here) return filtered;
-    return [...filtered].sort((a, b) => distanceKm(here, a) - distanceKm(here, b));
-  }, [area, category, here]);
+  // Live from AMap: around the user (closest first) or the city's top places.
+  const cat = category === 'all' ? undefined : category;
+  const search = usePlaces(area === 'nearby' ? (here ? { near: here, radius: 5000, category: cat } : null) : { city: city!.nameZh, category: cat });
+  const places = useMemo(
+    // Keep the selected place on the map even when it isn't in the current results.
+    () => (selectedPlace && !search.places.some((p) => p.id === selectedPlace.id) ? [selectedPlace, ...search.places] : search.places),
+    [search.places, selectedPlace]
+  );
 
   const center = useMemo(() => {
     if (area === 'nearby' && here) return { ...here, _r: recenter };
@@ -212,11 +220,7 @@ export default function ExploreScreen() {
                   iconColor={Colors.red}
                   iconBg={Colors.redSoft}
                   title={`${t(c.name)}  ${c.nameZh}`}
-                  subtitle={
-                    here
-                      ? t('{count} places · {distance} away', { count: Places.filter((p) => p.city === c.id).length, distance: formatDistance(distanceKm(here, c)) })
-                      : t('{count} places', { count: Places.filter((p) => p.city === c.id).length })
-                  }
+                  subtitle={here ? t('{distance} away', { distance: formatDistance(distanceKm(here, c)) }) : t('Top places on AMap')}
                   selected={area === c.id}
                   onPress={() => chooseArea(c.id)}
                 />
@@ -250,7 +254,7 @@ export default function ExploreScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.sheetTitle}>{area === 'nearby' ? t('Places near you') : t('Places in {city}', { city: t(city!.name) })}</Text>
                   <Text style={styles.sheetSub}>
-                    {places.length === 1 ? t('1 place') : t('{count} places', { count: places.length })}
+                    {search.loading ? t('Searching AMap…') : places.length === 1 ? t('1 place') : t('{count} places', { count: places.length })}
                     {category !== 'all' ? ` · ${t(CategoryMeta[category].label)}` : ''}
                   </Text>
                 </View>
@@ -281,8 +285,12 @@ export default function ExploreScreen() {
             ) : null}
 
             <ScrollView contentContainerStyle={styles.list}>
-              {places.length === 0 ? (
-                <Text style={styles.empty}>{t('No places in this category yet. Try another filter.')}</Text>
+              {search.loading ? (
+                <ActivityIndicator color={Colors.red} style={{ marginTop: Spacing.lg }} />
+              ) : search.error ? (
+                <Text style={styles.empty}>{search.error}</Text>
+              ) : places.length === 0 ? (
+                <Text style={styles.empty}>{t('No places found here. Try another filter.')}</Text>
               ) : (
                 places.map((p) => {
                   const active = p.id === selectedId;
@@ -292,16 +300,19 @@ export default function ExploreScreen() {
                       key={p.id}
                       onPress={() => selectPlace(p.id)}
                       style={[styles.placeRow, active && styles.placeRowActive]}>
-                      <View style={[styles.placeEmoji, { backgroundColor: CategoryMeta[p.category].color + '1A' }]}>
-                        <Text style={{ fontSize: 26 }}>{p.emoji}</Text>
-                      </View>
+                      <PlaceThumb place={p} size={52} />
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.placeName}>{t(p.name)}</Text>
-                        <Text style={styles.placeZh}>{p.nameZh}</Text>
+                        <Text style={styles.placeName} numberOfLines={1}>
+                          {p.name}
+                        </Text>
+                        {p.name !== p.nameZh ? (
+                          <Text style={styles.placeZh} numberOfLines={1}>
+                            {p.nameZh}
+                          </Text>
+                        ) : null}
                         <View style={styles.metaRow}>
-                          <Ionicons name="star" size={12} color={Colors.gold} />
-                          <Text style={styles.meta}>
-                            {p.rating} · {t(p.ticket)} · {t(CategoryMeta[p.category].label)}
+                          <Text style={styles.meta} numberOfLines={1}>
+                            {placeMeta(p, t(CategoryMeta[p.category].label))}
                           </Text>
                           {away ? (
                             <View style={styles.distance}>
@@ -462,7 +473,6 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   placeRowActive: { borderColor: Colors.red },
-  placeEmoji: { width: 56, height: 56, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
   placeName: { fontSize: 16, fontWeight: '700', color: Colors.ink },
   placeZh: { fontSize: 13, color: Colors.inkSoft },
   metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 4 },

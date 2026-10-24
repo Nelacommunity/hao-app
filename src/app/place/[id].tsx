@@ -1,19 +1,21 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SpeakButton } from '@/components/speak-button';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
-import { CategoryMeta, getPlace } from '@/data/places';
+import { CategoryMeta } from '@/data/places';
+import { usePlace } from '@/lib/places';
 import { isPlaceSaved, setPlaceSaved } from '@/lib/saved-places';
 import { useT } from '@/lib/i18n';
 
 export default function PlaceScreen() {
   const t = useT();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const place = getPlace(id);
+  const { place, loading, error } = usePlace(id);
   const [driverMode, setDriverMode] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -32,10 +34,18 @@ export default function PlaceScreen() {
     }
   };
 
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.center}>
+        <ActivityIndicator color={Colors.red} />
+      </SafeAreaView>
+    );
+  }
+
   if (!place) {
     return (
       <SafeAreaView style={styles.center}>
-        <Text style={styles.missing}>{t('Place not found')}</Text>
+        <Text style={styles.missing}>{error ?? t('Place not found')}</Text>
         <Pressable onPress={() => router.back()}>
           <Text style={styles.link}>{t('Go back')}</Text>
         </Pressable>
@@ -60,7 +70,11 @@ export default function PlaceScreen() {
     <View style={styles.container}>
       <ScrollView contentContainerStyle={{ paddingBottom: Spacing.xxl }}>
         <View style={[styles.hero, { backgroundColor: meta.color + '22' }]}>
-          <Text style={styles.heroEmoji}>{place.emoji}</Text>
+          {place.photos[0] ? (
+            <Image source={{ uri: place.photos[0] }} style={StyleSheet.absoluteFill} contentFit="cover" transition={250} />
+          ) : (
+            <Text style={styles.heroEmoji}>{meta.emoji}</Text>
+          )}
           <Pressable onPress={() => router.back()} style={styles.close} accessibilityLabel={t('Close')}>
             <Ionicons name="close" size={22} color={Colors.ink} />
           </Pressable>
@@ -75,31 +89,60 @@ export default function PlaceScreen() {
         </View>
 
         <View style={styles.body}>
-          <Text style={[styles.category, { color: meta.color }]}>{t(meta.label)}</Text>
-          <Text style={styles.name}>{t(place.name)}</Text>
+          <Text style={[styles.category, { color: meta.color }]}>
+            {t(meta.label)}
+            {place.typeZh ? ` · ${place.typeZh}` : ''}
+          </Text>
+          <Text style={styles.name}>{place.name}</Text>
           <View style={styles.zhRow}>
             <Text style={styles.zh}>{place.nameZh}</Text>
             <SpeakButton text={place.nameZh} />
           </View>
 
-          <View style={styles.facts}>
-            <Fact icon="star" label={t('Rating')} value={String(place.rating)} />
-            <Fact icon={place.category === 'food' ? 'wallet' : 'ticket'} label={place.category === 'food' ? t('Per person') : t('Ticket')} value={place.ticket.replace('/person', '')} />
-            <Fact icon="time" label={t('Hours')} value={place.hours.split(' · ')[0]} />
-          </View>
+          {place.rating || place.cost || place.hours ? (
+            <View style={styles.facts}>
+              {place.rating ? <Fact icon="star" label={t('Rating')} value={String(place.rating)} /> : null}
+              {place.cost ? (
+                <Fact icon={place.category === 'food' ? 'wallet' : 'ticket'} label={t('Per person')} value={`¥${Math.round(place.cost)}`} />
+              ) : null}
+              {place.hours ? <Fact icon="time" label={t('Hours')} value={place.hours} /> : null}
+            </View>
+          ) : null}
 
-          <Text style={styles.description}>{t(place.description)}</Text>
-          {place.hours.includes('·') ? <Text style={styles.note}>⚠️ {place.hours.split(' · ')[1]}</Text> : null}
-
-          <View style={styles.tip}>
-            <Ionicons name="bulb" size={20} color="#A26A00" />
-            <Text style={styles.tipText}>{t(place.tip)}</Text>
-          </View>
+          {place.tags.length ? (
+            <View style={styles.tags}>
+              {place.tags.map((tag) => (
+                <Text key={tag} style={styles.tagChip}>
+                  {tag}
+                </Text>
+              ))}
+            </View>
+          ) : null}
 
           <View style={styles.addressCard}>
             <Text style={styles.addressLabel}>{t('Address')}</Text>
             <Text style={styles.address}>{place.addressZh}</Text>
+            {place.address && place.address !== place.addressZh ? <Text style={styles.addressEn}>{place.address}</Text> : null}
           </View>
+
+          {place.tel ? (
+            <Pressable
+              onPress={() => Linking.openURL(`tel:${place.tel!.replace(/[^\d+]/g, '')}`).catch(() => {})}
+              style={({ pressed }) => [styles.addressCard, styles.telRow, pressed && { opacity: 0.85 }]}
+              accessibilityRole="button">
+              <Ionicons name="call" size={18} color={Colors.red} />
+              <Text style={styles.tel}>{place.tel}</Text>
+            </Pressable>
+          ) : null}
+
+          {place.photos.length > 1 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photos}>
+              {place.photos.slice(1).map((uri) => (
+                <Image key={uri} source={{ uri }} style={styles.photo} contentFit="cover" transition={200} />
+              ))}
+            </ScrollView>
+          ) : null}
+          <Text style={styles.source}>{t('Place details from AMap 高德地图')}</Text>
 
           <Pressable
             onPress={() => router.dismissTo({ pathname: '/explore', params: { route: place.id } })}
@@ -138,7 +181,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
   missing: { fontSize: 18, fontWeight: '700', color: Colors.ink },
   link: { color: Colors.red, fontWeight: '700' },
-  hero: { height: 220, alignItems: 'center', justifyContent: 'center' },
+  hero: { height: 240, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   heroEmoji: { fontSize: 110 },
   close: {
     position: 'absolute',
@@ -170,20 +213,25 @@ const styles = StyleSheet.create({
   },
   factValue: { fontSize: 15, fontWeight: '800', color: Colors.ink },
   factLabel: { fontSize: 11, color: Colors.muted },
-  description: { fontSize: 16, lineHeight: 24, color: Colors.inkSoft },
-  note: { fontSize: 14, color: Colors.redDark, fontWeight: '600' },
-  tip: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    padding: Spacing.md,
-    backgroundColor: Colors.goldSoft,
-    borderRadius: Radius.md,
-    marginTop: Spacing.sm,
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tagChip: {
+    fontSize: 13,
+    color: Colors.inkSoft,
+    backgroundColor: Colors.card,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: Radius.pill,
+    overflow: 'hidden',
   },
-  tipText: { flex: 1, fontSize: 14, lineHeight: 20, color: '#6B4A00' },
   addressCard: { padding: Spacing.md, backgroundColor: Colors.card, borderRadius: Radius.md, ...Shadow },
   addressLabel: { fontSize: 11, fontWeight: '700', color: Colors.muted, textTransform: 'uppercase', letterSpacing: 1 },
   address: { fontSize: 17, fontWeight: '600', color: Colors.ink, marginTop: 4 },
+  addressEn: { fontSize: 14, color: Colors.inkSoft, marginTop: 4 },
+  telRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  tel: { fontSize: 16, fontWeight: '700', color: Colors.ink },
+  photos: { gap: Spacing.sm },
+  photo: { width: 160, height: 110, borderRadius: Radius.md, backgroundColor: Colors.card },
+  source: { fontSize: 11, color: Colors.muted, textAlign: 'center' },
   cta: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -6,6 +6,7 @@ import {
   type NativeSyntheticEvent,
   Pressable,
   ScrollView,
+  type ScrollViewInstance,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -49,7 +50,7 @@ const SLIDES = [
 export default function OnboardingScreen() {
   const t = useT();
   const { width } = useWindowDimensions();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const [index, setIndex] = useState(0);
   const language = useTravellerLanguage();
   const [pickerOpen, setPickerOpen] = useState(false);

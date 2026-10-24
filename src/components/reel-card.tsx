@@ -6,8 +6,8 @@ import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 
 import { Radius, Spacing } from '@/constants/theme';
-import { DishPhoto, PlacePhoto, photoFor, type Photo } from '@/data/photos';
-import { CategoryMeta, Cities } from '@/data/places';
+import { DishPhoto, photoFor, type Photo } from '@/data/photos';
+import { CategoryMeta } from '@/data/places';
 import type { ReelCard as Card, TodayInfo, Upcoming } from '@/lib/discover';
 import { useT, type T } from '@/lib/i18n';
 
@@ -113,7 +113,7 @@ export function ReelCard({ card, height, topInset, liked, onLike, onShare, onOpe
   );
 }
 
-/** Licence credit for the photo (Wikimedia Commons); tapping opens the source page. */
+/** Credit for the photo (Wikimedia Commons or AMap); tapping opens the source page. */
 function PhotoCredit({ photo, label }: { photo: Photo; label: string }) {
   return (
     <Pressable onPress={() => Linking.openURL(photo.url).catch(() => {})} hitSlop={6} accessibilityRole="link">
@@ -220,18 +220,17 @@ function view(card: Card, t: T, locale: string): View_ {
     case 'place': {
       const p = card.place;
       const meta = CategoryMeta[p.category];
-      const city = Cities.find((c) => c.id === p.city);
+      const amapUrl = `https://uri.amap.com/marker?position=${p.longitude},${p.latitude}&name=${encodeURIComponent(p.nameZh)}&coordinate=gaode&src=hao`;
       return {
         colors: [meta.color, shade(meta.color, 0.6)],
-        photo: photoFor(PlacePhoto[p.id]),
-        badge: `📍 ${card.daily ? t('Place of the day') : t(meta.label)} · ${city ? t(city.name) : ''}`,
-        emoji: p.emoji,
+        photo: p.photos[0] ? { source: { uri: p.photos[0] }, credit: 'AMap 高德地图', url: amapUrl } : undefined,
+        badge: `📍 ${card.daily ? t('Place of the day') : t(meta.label)} · ${[p.cityZh, p.districtZh].filter(Boolean).join(' ')}`,
+        emoji: meta.emoji,
         watermark: p.nameZh.slice(0, 1),
-        title: t(p.name),
-        zh: p.nameZh,
-        chips: [`★ ${p.rating}`, t(p.hours), t(p.ticket)].filter(Boolean),
-        body: t(p.description),
-        tip: t(p.tip),
+        title: p.name,
+        zh: p.name === p.nameZh ? undefined : p.nameZh,
+        chips: [p.rating ? `★ ${p.rating}` : '', p.hours ?? '', p.cost ? `¥${Math.round(p.cost)}` : '', p.typeZh].filter(Boolean),
+        body: p.address || p.addressZh,
       };
     }
     case 'dish': {

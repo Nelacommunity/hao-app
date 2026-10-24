@@ -8,6 +8,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  type ScrollViewInstance,
   StyleSheet,
   Text,
   TextInput,
@@ -53,7 +54,7 @@ export default function ConversationRoom() {
   const [contextOpen, setContextOpen] = useState(false);
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState('');
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   const vad = useVadRecorder((result) => {
     if ('audio' in result) host.sendAudio(result.audio);

@@ -5,10 +5,13 @@ import { FlatList, Share, StyleSheet, Text, View, type LayoutChangeEvent } from 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ReelCard } from '@/components/reel-card';
+import { Cities } from '@/data/places';
 import { buildFeed, type ReelCard as Card } from '@/lib/discover';
 import { useT } from '@/lib/i18n';
 import { useTravellerLanguage } from '@/lib/language-store';
 import { toggleLike, useLikes } from '@/lib/likes';
+import { useCurrentLocation } from '@/lib/location';
+import { usePlaces } from '@/lib/places';
 import { fetchSavedPlaceIds, setPlaceSaved } from '@/lib/saved-places';
 
 const HEADER = 44;
@@ -30,7 +33,10 @@ export default function DiscoverScreen() {
       setDay(new Date().toDateString());
     }, [])
   );
-  const feed = useMemo(() => buildFeed(new Date(day)), [day]);
+  // Place cards come from AMap: what's around the user (when location was already allowed), or Beijing.
+  const here = useCurrentLocation().coords;
+  const nearby = usePlaces(here ? { near: here, radius: 30_000 } : { city: Cities[0].nameZh });
+  const feed = useMemo(() => buildFeed(new Date(day), nearby.places), [day, nearby.places]);
 
   useEffect(() => {
     fetchSavedPlaceIds()
@@ -111,7 +117,7 @@ export default function DiscoverScreen() {
 function shareText(card: Card, t: ReturnType<typeof useT>) {
   switch (card.kind) {
     case 'place':
-      return `${t(card.place.name)} · ${card.place.nameZh}\n${t(card.place.description)}`;
+      return `${card.place.name} · ${card.place.nameZh}\n${card.place.addressZh}`;
     case 'dish':
       return `${t(card.dish.name)} · ${card.dish.nameZh}\n${t(card.dish.description)}`;
     case 'culture':

@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -22,7 +22,7 @@ export default function BroadcastRoom() {
   const { connected, counts, transcript, questions, error, ended } = host;
   const [tab, setTab] = useState<'transcript' | 'questions'>('transcript');
   const [qrOpen, setQrOpen] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   const onChunk = useCallback((audio: AudioInput) => void host.sendChunk(audio), [host]);
   const mic = useChunkedRecorder(onChunk);

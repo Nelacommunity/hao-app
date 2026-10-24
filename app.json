@@ -65,7 +65,8 @@
         {
           "locationWhenInUsePermission": "Hao shows your location on the map to suggest nearby places."
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, type TextInputInstance, View } from 'react-native';
 
 import { AuthFooter, AuthScreen, Field, FormMessage, isEmail, OnRed, PrimaryButton } from '@/components/auth-ui';
 import { LanguagePicker } from '@/components/language-picker';
@@ -22,8 +22,8 @@ export default function SignUpScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
-  const emailRef = useRef<TextInput>(null);
-  const passwordRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInputInstance>(null);
+  const passwordRef = useRef<TextInputInstance>(null);
 
   const emailError = touched && !isEmail(email) ? t('Enter a valid email address.') : null;
   const passwordError =

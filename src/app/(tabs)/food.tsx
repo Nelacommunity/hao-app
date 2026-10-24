@@ -1,17 +1,15 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Chip } from '@/components/chip';
-import { NearbyFood, whereToTry } from '@/components/nearby-food';
+import { NearbyFood, WhereToTry } from '@/components/nearby-food';
 import { ScreenHeader } from '@/components/screen-header';
 import { SpeakButton } from '@/components/speak-button';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { DietMeta, Dishes, type DietTag } from '@/data/food';
-import { distanceKm, formatDistance, useCurrentLocation } from '@/lib/location';
+import { useCurrentLocation } from '@/lib/location';
 import { tx, useT } from '@/lib/i18n';
 
 const SPICE_LEVELS = [tx('None'), tx('Mild'), tx('Medium'), tx('Hot')] as const;
@@ -71,7 +69,6 @@ export default function FoodScreen() {
           ) : null}
           {dishes.map((d) => {
             const open = expanded === d.id;
-            const spot = whereToTry(d.id, location.coords);
             return (
               <Animated.View key={d.id} layout={LinearTransition} style={styles.card}>
                 <Pressable onPress={() => setExpanded(open ? undefined : d.id)} style={styles.cardTop}>
@@ -99,22 +96,11 @@ export default function FoodScreen() {
                   <SpeakButton text={d.nameZh} />
                 </Pressable>
 
-                {spot ? (
-                  <Pressable
-                    onPress={() => router.push({ pathname: '/place/[id]', params: { id: spot.id } })}
-                    style={({ pressed }) => [styles.tryRow, pressed && { opacity: 0.7 }]}
-                    accessibilityRole="link">
-                    <Ionicons name="location" size={14} color={Colors.red} />
-                    <Text style={styles.tryText} numberOfLines={1}>{t('Try it at')}{' '}<Text style={styles.tryName}>{spot.name}</Text>
-                      {location.coords ? ` · ${formatDistance(distanceKm(location.coords, spot))}` : ''}
-                    </Text>
-                    <Ionicons name="chevron-forward" size={14} color={Colors.muted} />
-                  </Pressable>
-                ) : null}
 
                 {open ? (
                   <Animated.View entering={FadeIn} style={styles.details}>
                     <Text style={styles.description}>{t(d.description)}</Text>
+                    <WhereToTry dish={d} here={location.coords} />
                     <View style={styles.orderBox}>
                       <Text style={styles.orderLabel}>{t('Show this to order')}</Text>
                       <View style={styles.orderRow}>
@@ -142,18 +128,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.paper },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingBottom: Spacing.md },
   sectionTitle: { fontSize: 20, fontWeight: '800', color: Colors.ink, paddingHorizontal: Spacing.md, marginBottom: Spacing.sm },
-  tryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: Spacing.md,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.redSoft,
-  },
-  tryText: { flex: 1, fontSize: 13, color: Colors.inkSoft },
-  tryName: { fontWeight: '800', color: Colors.ink },
   spiceCard: {
     marginHorizontal: Spacing.md,
     padding: Spacing.md,

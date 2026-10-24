@@ -15,7 +15,10 @@ export type MapEvent = { type: 'ready' } | { type: 'select'; id: string };
 const tileUrl = (lang: 'en' | 'zh_cn') =>
   `https://webrd0{s}.is.autonavi.com/appmaptile?lang=${lang}&size=1&scale=1&style=8&x={x}&y={y}&z={z}`;
 
-/** A self-contained Leaflet page; the app drives it with window.haoState / window.haoView. */
+/**
+ * A self-contained Leaflet page; the app drives it with window.haoState / window.haoView. Events go to
+ * the React Native WebView, or to the parent window when the page runs in an iframe on web.
+ */
 export function leafletMapHtml(options: { lat: number; lng: number; zoom: number; labels: 'en' | 'zh_cn'; accent: string }) {
   return `<!doctype html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
@@ -31,7 +34,7 @@ html,body,#map{margin:0;height:100%;background:#F2EFE9}
 <script>${LEAFLET_JS}</script>
 <script>
 (function(){
-  var post=function(m){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage(JSON.stringify(m));};
+  var post=function(m){var s=JSON.stringify(m);if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(s);else if(window.parent!==window)window.parent.postMessage({hao:s},'*');};
   var map=L.map('map',{zoomControl:false,attributionControl:true}).setView([${options.lat},${options.lng}],${options.zoom});
   L.tileLayer(${JSON.stringify(tileUrl(options.labels))},{subdomains:'1234',maxZoom:18,attribution:'© 高德地图 AutoNavi'}).addTo(map);
   var markers=L.layerGroup().addTo(map), route=null, me=null;

@@ -3,6 +3,7 @@ import { Linking, Platform } from 'react-native';
 
 import { tx } from '@/lib/i18n';
 import { distanceKm, type Coords } from '@/lib/location';
+import { supabase } from '@/lib/supabase';
 
 export type TravelMode = 'foot' | 'bike' | 'car';
 
@@ -26,20 +27,17 @@ const SPEED_KMH: Record<TravelMode, number> = { foot: 4.8, bike: 14, car: 25 };
 const DETOUR = 1.3;
 const MAX_ROUTED_KM: Record<TravelMode, number> = { foot: 40, bike: 80, car: 400 };
 
-const OSRM = 'https://routing.openstreetmap.de';
-
-type OsrmResponse = {
-  code: string;
-  routes?: { distance: number; duration: number; geometry: { coordinates: [number, number][] } }[];
-};
-
-async function fetchJson(url: string, timeoutMs: number) {
+async function fetchRoute(params: URLSearchParams, timeoutMs: number) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const { data } = await supabase.auth.getSession();
+    const res = await fetch(`/api/route?${params}`, {
+      signal: controller.signal,
+      headers: { Authorization: `Bearer ${data.session?.access_token ?? ''}` },
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return (await res.json()) as OsrmResponse;
+    return (await res.json()) as { coords: [number, number][]; distanceM: number; durationS: number };
   } finally {
     clearTimeout(timer);
   }
@@ -50,34 +48,23 @@ function estimate(from: Coords, to: Coords, mode: TravelMode): Route {
   return { mode, coords: [from, to], distanceM: km * 1000, durationS: (km / SPEED_KMH[mode]) * 3600, approximate: true };
 }
 
-/**
- * Street route from OpenStreetMap data. Phones in mainland China may not reach the public server,
- * so it falls back to the app's own /api/route proxy, then to a straight-line estimate.
- */
+/** Street route from AMap (GCJ-02, like the places), or a straight-line estimate when it's unreachable. */
 export async function getRoute(from: Coords, to: Coords, mode: TravelMode): Promise<Route> {
   if (distanceKm(from, to) > MAX_ROUTED_KM[mode]) return estimate(from, to, mode);
-  const path = `${from.longitude.toFixed(6)},${from.latitude.toFixed(6)};${to.longitude.toFixed(6)},${to.latitude.toFixed(6)}`;
-  const sources = [
-    `${OSRM}/routed-${mode}/route/v1/driving/${path}?overview=full&geometries=geojson`,
-    `/api/route?mode=${mode}&path=${encodeURIComponent(path)}`,
-  ];
-  for (const url of sources) {
-    try {
-      const data = await fetchJson(url, 7000);
-      const route = data.routes?.[0];
-      if (data.code !== 'Ok' || !route) continue;
-      return {
-        mode,
-        coords: route.geometry.coordinates.map(([longitude, latitude]) => ({ latitude, longitude })),
-        distanceM: route.distance,
-        durationS: route.duration,
-        approximate: false,
-      };
-    } catch {
-      // Try the next source.
-    }
+  const point = (c: Coords) => `${c.latitude.toFixed(6)},${c.longitude.toFixed(6)}`;
+  try {
+    const route = await fetchRoute(new URLSearchParams({ mode, from: point(from), to: point(to) }), 8000);
+    if (route.coords.length < 2) return estimate(from, to, mode);
+    return {
+      mode,
+      coords: route.coords.map(([latitude, longitude]) => ({ latitude, longitude })),
+      distanceM: route.distanceM,
+      durationS: route.durationS,
+      approximate: false,
+    };
+  } catch {
+    return estimate(from, to, mode);
   }
-  return estimate(from, to, mode);
 }
 
 export function formatDuration(seconds: number) {
@@ -130,11 +117,11 @@ export const MapsApps: { app: MapsApp; label: string }[] = [
   { app: 'google', label: 'Google Maps' },
 ];
 
-/** Amap's universal link opens the app when installed (best in mainland China), otherwise its web map. */
+/** Amap's universal link opens the app when installed (best in mainland China), otherwise its web map. `to` is GCJ-02. */
 export function openInMaps(app: MapsApp, to: Coords & { name: string }, mode: TravelMode) {
   const name = encodeURIComponent(to.name);
   const url = {
-    amap: `https://uri.amap.com/navigation?to=${to.longitude},${to.latitude},${name}&mode=${AMAP_MODE[mode]}&coordinate=wgs84&callnative=1&src=hao`,
+    amap: `https://uri.amap.com/navigation?to=${to.longitude},${to.latitude},${name}&mode=${AMAP_MODE[mode]}&coordinate=gaode&callnative=1&src=hao`,
     apple: `http://maps.apple.com/?daddr=${to.latitude},${to.longitude}&q=${name}&dirflg=${APPLE_FLAG[mode]}`,
     google: `https://www.google.com/maps/dir/?api=1&destination=${to.latitude},${to.longitude}&travelmode=${GOOGLE_MODE[mode]}`,
   }[app];

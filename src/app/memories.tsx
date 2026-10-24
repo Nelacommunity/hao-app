@@ -120,7 +120,7 @@ export default function MemoriesScreen() {
               <Ionicons name="trash" size={16} color={Colors.redDark} />
               <Text style={styles.forgetText}>{t('Forget everything')}</Text>
             </Pressable>
-          ) : null
+          ) : undefined
         }
       />
     </SafeAreaView>

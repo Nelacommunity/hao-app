@@ -2,23 +2,20 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { PlaceThumb, placeMeta } from '@/components/place-thumb';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
-import { DietMeta, type DietTag } from '@/data/food';
-import { Cities, Places, type Place } from '@/data/places';
+import type { DietTag, Dish } from '@/data/food';
+import { Cities } from '@/data/places';
 import { distanceKm, formatDistance, type Coords, type useCurrentLocation } from '@/lib/location';
 import { useT } from '@/lib/i18n';
+import { usePlaces, type PlaceQuery } from '@/lib/places';
 
-export const Restaurants = Places.filter((p) => p.category === 'food');
+// What to search AMap for with each diet filter.
+const DIET_KEYWORD: Record<DietTag, string> = { vegetarian: '素食', halal: '清真', spicy: '川菜', street: '小吃' };
 
-/** Restaurants for the current filter, closest first when the location is known. */
-export function nearbyRestaurants(here: Coords | null, tag: DietTag | 'all') {
-  const list = Restaurants.filter((r) => tag === 'all' || r.tags?.includes(tag));
-  return here ? [...list].sort((a, b) => distanceKm(here, a) - distanceKm(here, b)) : list;
-}
-
-/** The closest restaurant known for a dish, if any. */
-export function whereToTry(dishId: string, here: Coords | null): Place | undefined {
-  return nearbyRestaurants(here, 'all').find((r) => r.dishIds?.includes(dishId));
+/** Restaurants around the user, or in Beijing until the location is known. */
+function foodQuery(here: Coords | null, q?: string): PlaceQuery {
+  return here ? { near: here, radius: 5000, category: 'food', q } : { city: Cities[0].nameZh, category: 'food', q };
 }
 
 type Props = { location: ReturnType<typeof useCurrentLocation>; tag: DietTag | 'all' };
@@ -26,26 +23,17 @@ type Props = { location: ReturnType<typeof useCurrentLocation>; tag: DietTag | '
 export function NearbyFood({ location, tag }: Props) {
   const t = useT();
   const here = location.coords;
-  const list = nearbyRestaurants(here, tag);
-  const nearest = here && list[0] ? distanceKm(here, list[0]) : null;
-  // Far from every covered city: still useful, but say so.
-  const far = nearest !== null && nearest > 100;
-  const closestCity = here ? [...Cities].sort((a, b) => distanceKm(here, a) - distanceKm(here, b))[0] : null;
+  const search = usePlaces(location.status === 'loading' && !here ? null : foodQuery(here, tag === 'all' ? undefined : DIET_KEYWORD[tag]));
+  const list = search.places;
 
   return (
     <View style={styles.wrap}>
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>{here ? t('Places to eat near you') : t('Places to eat')}</Text>
-          <Text style={styles.subtitle}>
-            {!here
-              ? t('Turn on location to sort by distance')
-              : far && closestCity
-                ? t('Closest Hao picks · {distance} to {city}', { distance: formatDistance(distanceKm(here, closestCity)), city: t(closestCity.name) })
-                : t('Closest first')}
-          </Text>
+          <Text style={styles.subtitle}>{here ? t('Closest first') : t('Top picks in {city} · turn on location for nearby', { city: t(Cities[0].name) })}</Text>
         </View>
-        {location.status === 'loading' ? <ActivityIndicator color={Colors.red} /> : null}
+        {location.status === 'loading' || search.loading ? <ActivityIndicator color={Colors.red} /> : null}
       </View>
 
       {!here && location.status !== 'loading' ? (
@@ -68,8 +56,10 @@ export function NearbyFood({ location, tag }: Props) {
         </Pressable>
       ) : null}
 
-      {list.length === 0 ? (
-        <Text style={styles.empty}>{t('No restaurants match this filter yet.')}</Text>
+      {search.error ? (
+        <Text style={styles.empty}>{search.error}</Text>
+      ) : !search.loading && list.length === 0 ? (
+        <Text style={styles.empty}>{t('No restaurants found on AMap for this filter.')}</Text>
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cards}>
           {list.map((r) => (
@@ -78,9 +68,9 @@ export function NearbyFood({ location, tag }: Props) {
               onPress={() => router.push({ pathname: '/place/[id]', params: { id: r.id } })}
               style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
               accessibilityRole="button"
-              accessibilityLabel={here ? t('{name}, {distance} away', { name: t(r.name), distance: formatDistance(distanceKm(here, r)) }) : t(r.name)}>
-              <View style={styles.cardArt}>
-                <Text style={{ fontSize: 34 }}>{r.emoji}</Text>
+              accessibilityLabel={here ? t('{name}, {distance} away', { name: r.name, distance: formatDistance(distanceKm(here, r)) }) : r.name}>
+              <View>
+                <PlaceThumb place={r} size={156} radius={Radius.md} style={styles.cardArt} />
                 {here ? (
                   <View style={styles.distance}>
                     <Ionicons name="navigate" size={10} color="#2576FF" />
@@ -89,27 +79,43 @@ export function NearbyFood({ location, tag }: Props) {
                 ) : null}
               </View>
               <Text style={styles.name} numberOfLines={1}>
-                {t(r.name)}
+                {r.name}
               </Text>
-              <Text style={styles.nameZh} numberOfLines={1}>
-                {r.nameZh}
+              {r.name !== r.nameZh ? (
+                <Text style={styles.nameZh} numberOfLines={1}>
+                  {r.nameZh}
+                </Text>
+              ) : null}
+              <Text style={styles.meta} numberOfLines={1}>
+                {placeMeta(r, t('Restaurant'))}
               </Text>
-              <View style={styles.metaRow}>
-                <Ionicons name="star" size={11} color={Colors.gold} />
-                <Text style={styles.meta}>
-                  {r.rating} · {t(r.ticket)}
-                </Text>
-              </View>
-              {r.tags?.filter((tag) => tag === 'halal' || tag === 'vegetarian').map((tag) => (
-                <Text key={tag} style={styles.tag}>
-                  {DietMeta[tag].emoji} {t(DietMeta[tag].label)}
-                </Text>
-              ))}
             </Pressable>
           ))}
         </ScrollView>
       )}
     </View>
+  );
+}
+
+/** The closest restaurant AMap finds for a dish (searched only while its card is open). */
+export function WhereToTry({ dish, here }: { dish: Dish; here: Coords | null }) {
+  const t = useT();
+  const { places, loading } = usePlaces(foodQuery(here, dish.nameZh));
+  const spot = places[0];
+  if (loading) return <ActivityIndicator color={Colors.red} style={{ alignSelf: 'flex-start' }} />;
+  if (!spot) return null;
+  return (
+    <Pressable
+      onPress={() => router.push({ pathname: '/place/[id]', params: { id: spot.id } })}
+      style={({ pressed }) => [styles.tryRow, pressed && { opacity: 0.7 }]}
+      accessibilityRole="link">
+      <Ionicons name="location" size={14} color={Colors.red} />
+      <Text style={styles.tryText} numberOfLines={1}>
+        {t('Try it at')} <Text style={styles.tryName}>{spot.name}</Text>
+        {here ? ` · ${formatDistance(distanceKm(here, spot))}` : ''}
+      </Text>
+      <Ionicons name="chevron-forward" size={14} color={Colors.muted} />
+    </Pressable>
   );
 }
 
@@ -134,14 +140,7 @@ const styles = StyleSheet.create({
   empty: { fontSize: 14, color: Colors.muted, paddingHorizontal: Spacing.md },
   cards: { gap: Spacing.md, paddingHorizontal: Spacing.md, paddingBottom: Spacing.sm },
   card: { width: 172, backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.sm, ...Shadow },
-  cardArt: {
-    height: 84,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.goldSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.sm,
-  },
+  cardArt: { height: 96, marginBottom: Spacing.sm },
   distance: {
     position: 'absolute',
     top: 6,
@@ -157,7 +156,17 @@ const styles = StyleSheet.create({
   distanceText: { fontSize: 11, fontWeight: '800', color: '#2576FF' },
   name: { fontSize: 15, fontWeight: '700', color: Colors.ink },
   nameZh: { fontSize: 12, color: Colors.inkSoft, marginTop: 1 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 6 },
-  meta: { fontSize: 12, color: Colors.muted },
-  tag: { fontSize: 12, color: Colors.jade, fontWeight: '600', marginTop: 4 },
+  meta: { fontSize: 12, color: Colors.muted, marginTop: 6 },
+  tryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: Spacing.sm,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.redSoft,
+  },
+  tryText: { flex: 1, fontSize: 13, color: Colors.inkSoft },
+  tryName: { fontWeight: '800', color: Colors.ink },
 });

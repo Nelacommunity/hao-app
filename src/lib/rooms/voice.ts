@@ -23,9 +23,9 @@ export function playVoice(line: { id: string; text: string; audio: AudioInput | 
 
   if (!line.audio?.data) return speak();
   setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true })
-    .then(() => {
+    .then(async () => {
       const file = new File(Paths.cache, `hao-voice-${line.id}.wav`);
-      file.write(line.audio!.data, { encoding: 'base64' });
+      await file.write(line.audio!.data, { encoding: 'base64' });
       const player = createAudioPlayer({ uri: file.uri });
       const sub = player.addListener('playbackStatusUpdate', (status) => {
         if (!status.didJustFinish) return;

@@ -1,8 +1,8 @@
 // Photos for the Discover cards, bundled so they load offline and in mainland China (Wikimedia is blocked there).
 // All are freely licensed files from Wikimedia Commons; each card shows its credit and links to the source page.
-import type { ImageSourcePropType } from 'react-native';
+import type { ImageSource } from 'expo-image';
 
-export type Photo = { source: ImageSourcePropType; credit: string; url: string };
+export type Photo = { source: ImageSource | number; credit: string; url: string };
 
 export const Photos: Record<string, Photo> = {
   'bargaining': { source: require('../../assets/discover/bargaining.webp'), credit: "Phil James · CC BY-SA 2.0", url: "https://commons.wikimedia.org/wiki/File:Beijing_silk_market.jpg" },
@@ -66,15 +66,7 @@ export const Photos: Record<string, Photo> = {
   'yu-garden': { source: require('../../assets/discover/yu-garden.webp'), credit: "Stefan Fussan · CC BY-SA 3.0", url: "https://commons.wikimedia.org/wiki/File:Shanghai_-_Yu_Garden_-_0035.jpg" },
 };
 
-// Which photo each place and dish uses. Restaurants show their signature dish.
-export const PlacePhoto: Record<string, string> = {
-  'forbidden-city': 'forbidden-city', 'temple-of-heaven': 'temple-of-heaven', nanluoguxiang: 'nanluoguxiang', 'the-bund': 'the-bund',
-  'yu-garden': 'yu-garden', 'panda-base': 'panda-base', 'kuanzhai-alley': 'kuanzhai-alley', 'terracotta-army': 'terracotta-army',
-  'muslim-quarter': 'muslim-quarter', 'siji-minfu': 'peking-duck', 'huguosi-snacks': 'tanghulu', 'lily-vegetarian': 'buddhist-cuisine',
-  'jiajia-tangbao': 'xiaolongbao-shanghai', nanxiang: 'steamed-buns', gongdelin: 'buddhas-delight', 'chen-mapo': 'mapo-tofu-2',
-  'shu-jiu-xiang': 'hotpot', 'wenshu-vegetarian': 'wenshu', 'lao-sun-jia': 'paomo', 'fan-ji': 'roujiamo',
-};
-
+// Which photo each dish uses.
 export const DishPhoto: Record<string, string> = {
   'peking-duck': 'peking-duck', xiaolongbao: 'xiaolongbao', 'mapo-tofu': 'mapo-tofu', hotpot: 'hotpot',
   roujiamo: 'roujiamo', biangbiang: 'biangbiang', 'dim-sum': 'buddhas-delight', jianbing: 'jianbing',

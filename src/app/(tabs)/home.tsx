@@ -1,15 +1,18 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link, router } from 'expo-router';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PlaceThumb, placeMeta } from '@/components/place-thumb';
 import { SpeakButton } from '@/components/speak-button';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { Dishes } from '@/data/food';
 import { PhraseGroups } from '@/data/phrases';
-import { Places } from '@/data/places';
+import { CategoryMeta, Cities } from '@/data/places';
 import { tx, useT } from '@/lib/i18n';
+import { useCurrentLocation } from '@/lib/location';
+import { usePlaces } from '@/lib/places';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -33,7 +36,10 @@ const EMERGENCY = [
 
 export default function HomeScreen() {
   const t = useT();
-  const featuredPlaces = Places.slice(0, 5);
+  // AMap's top sights near the user (when location was already allowed), otherwise in Beijing.
+  const here = useCurrentLocation().coords;
+  const featured = usePlaces(here ? { near: here, radius: 20_000, category: 'landmark' } : { city: Cities[0].nameZh, category: 'landmark' });
+  const featuredPlaces = featured.places.slice(0, 8);
   const phraseOfDay = PhraseGroups[0].phrases[0];
 
   return (
@@ -80,21 +86,22 @@ export default function HomeScreen() {
 
         <SectionTitle title={t('Must-see places')} href="/explore" />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList}>
+          {featured.loading ? <ActivityIndicator color={Colors.red} style={{ margin: Spacing.lg }} /> : null}
           {featuredPlaces.map((p) => (
             <Link key={p.id} href={{ pathname: '/place/[id]', params: { id: p.id } }} asChild>
               <Pressable style={styles.placeCard}>
-                <View style={styles.placeArt}>
-                  <Text style={{ fontSize: 48 }}>{p.emoji}</Text>
-                </View>
+                <PlaceThumb place={p} size={144} radius={Radius.md} style={styles.placeArt} />
                 <Text style={styles.placeName} numberOfLines={1}>
-                  {t(p.name)}
+                  {p.name}
                 </Text>
-                <Text style={styles.placeZh}>{p.nameZh}</Text>
-                <View style={styles.ratingRow}>
-                  <Ionicons name="star" size={12} color={Colors.gold} />
-                  <Text style={styles.rating}>{p.rating}</Text>
-                  <Text style={styles.ticket}>· {t(p.ticket)}</Text>
-                </View>
+                {p.name !== p.nameZh ? (
+                  <Text style={styles.placeZh} numberOfLines={1}>
+                    {p.nameZh}
+                  </Text>
+                ) : null}
+                <Text style={styles.ticket} numberOfLines={1}>
+                  {placeMeta(p, t(CategoryMeta[p.category].label))}
+                </Text>
               </Pressable>
             </Link>
           ))}
@@ -216,19 +223,10 @@ const styles = StyleSheet.create({
   seeAll: { fontSize: 14, fontWeight: '700', color: Colors.red },
   hList: { paddingHorizontal: Spacing.md, gap: Spacing.md, paddingBottom: Spacing.sm },
   placeCard: { width: 160, backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.sm, ...Shadow },
-  placeArt: {
-    height: 100,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.goldSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.sm,
-  },
+  placeArt: { height: 100, marginBottom: Spacing.sm },
   placeName: { fontSize: 15, fontWeight: '700', color: Colors.ink },
   placeZh: { fontSize: 13, color: Colors.inkSoft, marginTop: 1 },
-  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 6 },
-  rating: { fontSize: 12, fontWeight: '700', color: Colors.ink },
-  ticket: { fontSize: 12, color: Colors.muted },
+  ticket: { fontSize: 12, color: Colors.muted, marginTop: 6 },
   foodList: {
     marginHorizontal: Spacing.md,
     backgroundColor: Colors.card,

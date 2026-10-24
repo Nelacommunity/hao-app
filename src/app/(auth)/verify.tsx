@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, type TextInputInstance, View } from 'react-native';
 
 import { AuthScreen, FormMessage, OnRed, PrimaryButton, TextLink } from '@/components/auth-ui';
 import { Colors, Radius } from '@/constants/theme';
@@ -20,7 +20,7 @@ export default function VerifyScreen() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(RESEND_SECONDS);
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const isRecovery = type === 'recovery';
 
   useEffect(() => {

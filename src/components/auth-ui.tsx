@@ -12,8 +12,9 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View,
+  type TextInputInstance,
   type TextInputProps,
+  View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -102,7 +103,7 @@ type FieldProps = TextInputProps & {
   secure?: boolean;
 };
 
-export const Field = forwardRef<TextInput, FieldProps>(function Field({ label, icon, error, secure, style, ...rest }, ref) {
+export const Field = forwardRef<TextInputInstance, FieldProps>(function Field({ label, icon, error, secure, style, ...rest }, ref) {
   const [focused, setFocused] = useState(false);
   const t = useT();
   const [hidden, setHidden] = useState(true);

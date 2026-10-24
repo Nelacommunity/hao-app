@@ -5,12 +5,14 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, Text
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LanguagePicker } from '@/components/language-picker';
+import { PlaceThumb } from '@/components/place-thumb';
 import { PreferencesEditor } from '@/components/preferences-editor';
 import { ScreenHeader } from '@/components/screen-header';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
-import { Places, type Place } from '@/data/places';
+import type { Place } from '@/data/places';
 import { useAuth, useLanguagePreference } from '@/lib/auth';
 import { countMemories } from '@/lib/memory';
+import { fetchPlacesById } from '@/lib/places';
 import { fetchSavedPlaceIds } from '@/lib/saved-places';
 import { supabase } from '@/lib/supabase';
 import { DefaultPreferences, parsePreferences } from '@shared/ai/preferences';
@@ -42,7 +44,8 @@ export default function ProfileScreen() {
     useCallback(() => {
       countMemories().then(setMemoryCount).catch(() => setMemoryCount(null));
       fetchSavedPlaceIds()
-        .then((ids) => setSaved(ids.map((id) => Places.find((p) => p.id === id)).filter((p): p is Place => !!p)))
+        .then(fetchPlacesById)
+        .then(setSaved)
         .catch(() => setSaved([]));
     }, [])
   );
@@ -173,10 +176,14 @@ export default function ProfileScreen() {
             saved.map((p, i) => (
               <Link key={p.id} href={{ pathname: '/place/[id]', params: { id: p.id } }} asChild>
                 <Pressable style={[styles.row, i > 0 && styles.rowDivider]}>
-                  <Text style={{ fontSize: 24 }}>{p.emoji}</Text>
+                  <PlaceThumb place={p} size={36} radius={10} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.rowLabel}>{t(p.name)}</Text>
-                    <Text style={styles.rowSub}>{p.nameZh}</Text>
+                    <Text style={styles.rowLabel} numberOfLines={1}>
+                      {p.name}
+                    </Text>
+                    <Text style={styles.rowSub} numberOfLines={1}>
+                      {p.nameZh}
+                    </Text>
                   </View>
                   <Ionicons name="chevron-forward" size={16} color={Colors.muted} />
                 </Pressable>

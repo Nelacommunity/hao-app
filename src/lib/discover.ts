@@ -1,7 +1,7 @@
 import { CultureItems, Festivals, SolarTerms, ZodiacYears, type CultureItem, type Festival, type SolarTerm } from '@/data/culture';
 import { Dishes, type Dish } from '@/data/food';
 import { PhraseGroups, type Phrase } from '@/data/phrases';
-import { Places, type Place } from '@/data/places';
+import type { Place } from '@/data/places';
 
 export type Upcoming = { kind: 'festival'; item: Festival; days: number } | { kind: 'term'; item: SolarTerm; days: number };
 
@@ -97,23 +97,25 @@ function shuffle<T>(list: T[], random: () => number) {
 
 /**
  * The Discover feed for one day: today's card, the place/dish/culture/phrase of the day, upcoming
- * festivals, then everything else mixed so places, food and culture alternate.
+ * festivals, then everything else mixed so places, food and culture alternate. `nearby` are AMap
+ * places around the user; until they load the feed simply has no place cards.
  */
-export function buildFeed(now: Date): ReelCard[] {
+export function buildFeed(now: Date, nearby: Place[]): ReelCard[] {
   const dayNumber = Math.floor(midnight(now).getTime() / DAY);
   const random = rng(dayNumber * 2654435761);
   const today = todayInChina(now);
 
-  const places = shuffle(Places, random);
   const dishes = shuffle(Dishes, random);
   const culture = shuffle(CultureItems, random);
+  // Last, so the dish and culture order stays the same when the places arrive.
+  const places = shuffle(nearby, random);
   const phrases = PhraseGroups.flatMap((g) => g.phrases.map((phrase) => ({ phrase, group: g.title })));
   const phrase = phrases[dayNumber % phrases.length];
 
   const cards: ReelCard[] = [{ kind: 'today', id: 'today', today }];
   if (today.festival) cards.push({ kind: 'festival', id: `festival-${today.festival.id}`, item: today.festival, days: 0 });
   cards.push({ kind: 'culture', id: `culture-${culture[0].id}`, item: culture[0], daily: true });
-  cards.push({ kind: 'place', id: `place-${places[0].id}`, place: places[0], daily: true });
+  if (places[0]) cards.push({ kind: 'place', id: `place-${places[0].id}`, place: places[0], daily: true });
   cards.push({ kind: 'dish', id: `dish-${dishes[0].id}`, dish: dishes[0], daily: true });
   for (const u of today.upcoming) {
     if (u.kind === 'festival') cards.push({ kind: 'festival', id: `festival-${u.item.id}`, item: u.item, days: u.days });

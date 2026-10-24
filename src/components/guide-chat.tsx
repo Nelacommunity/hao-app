@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 
 import { GuideApps, GuideTopics, type GuideApp } from '@shared/ai/china-guide';
@@ -45,7 +45,7 @@ export const GuideChat = forwardRef<GuideChatHandle, Props>(function GuideChat({
   // Compact by default so the chat stays visible; opens when Hao proposes a new plan.
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [showTopics, setShowTopics] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   const here = location.coords;
   const nearest = here ? [...Cities].sort((a, b) => distanceKm(here, a) - distanceKm(here, b))[0] : null;
