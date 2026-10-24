@@ -1,9 +1,10 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { AnimatedSplash } from '@/components/animated-splash';
 import { TranslatingBanner } from '@/components/translating-banner';
 import { Colors, finishThemeHydration, useThemeMode } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/lib/auth';
@@ -28,10 +29,19 @@ export default function RootLayout() {
           <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
           <RootNavigator key={mode} />
           <TranslatingBanner key={`banner-${mode}`} />
+          <StartupSplash />
         </AuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   );
+}
+
+/** The animated start-up screen, once per launch, taking over from the native splash when the app is ready. */
+function StartupSplash() {
+  const { loading } = useAuth();
+  const [done, setDone] = useState(false);
+  if (done) return null;
+  return <AnimatedSplash start={!loading} onDone={() => setDone(true)} />;
 }
 
 function RootNavigator() {
