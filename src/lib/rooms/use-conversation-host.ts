@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AudioInput, LanguageTarget, RoomSpeaker, RoomTurnLine } from '@shared/ai/types';
 import type { ConvCaption, PhaseState, RoomAlert, RoomContext, RoomSummary, ServerMessage } from '@shared/rooms/protocol';
-import type { GuestEnvelope } from '@shared/rooms/realtime';
+import { cleanName, type GuestEnvelope } from '@shared/rooms/realtime';
 
 import { roomApi, type RoomApi } from '@/lib/rooms/api';
 import { useHostChannel } from '@/lib/rooms/channel';
@@ -23,6 +23,8 @@ const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(
 type Options = {
   code: string | null;
   userLanguage: LanguageTarget & { speech: string };
+  /** The host's name, shown on the guest's page. */
+  userName?: string;
   initialContext: RoomContext | null;
   api?: RoomApi;
 };
@@ -33,7 +35,7 @@ type Options = {
  * its first line is written. The guest (web page) is reached over
  * Supabase Realtime; alerts, whispers and the summary never leave this phone.
  */
-export function useConversationHost({ code, userLanguage, initialContext, api = roomApi }: Options) {
+export function useConversationHost({ code, userLanguage, userName, initialContext, api = roomApi }: Options) {
   const [captions, setCaptions] = useState<ConvCaption[]>([]);
   const [whispers, setWhispers] = useState<{ id: string; whisper: string; at: number }[]>([]);
   const [alerts, setAlerts] = useState<RoomAlert[]>([]);
@@ -42,6 +44,8 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
   const [phase, setPhaseState] = useState<PhaseState>({ phase: 'idle', by: null });
   const [notice, setNotice] = useState<string | null>(null);
   const [ended, setEnded] = useState(false);
+  // What the guest asked to be called on the join page (from their messages; presence also carries it).
+  const [messageName, setMessageName] = useState<string | null>(null);
 
   // Mutable room state the async turn pipeline reads (refs avoid stale closures).
   const r = useRef({
@@ -54,22 +58,25 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
     introduced: false,
     awaiting: new Set<string>(),
     lastTurnAt: 0,
-    local: null as { pid: string; language: LanguageTarget } | null,
+    local: null as { pid: string; language: LanguageTarget; name: string | null } | null,
     ended: false,
     /** A turn is still streaming: early speech finishing must not free the floor yet. */
     turnPending: false,
   });
 
   const onGuestRef = useRef<(env: GuestEnvelope) => void>(() => {});
-  const { connected, presence, send } = useHostChannel(code, 'conversation', (env) => onGuestRef.current(env));
+  const { connected, presence, send } = useHostChannel(code, 'conversation', (env) => onGuestRef.current(env), userName);
   const localPresent = presence.find((p) => p.role === 'local');
 
-  // Learn the guest's id and language from presence too (they may not have sent anything since this screen opened).
+  // Learn the guest's id, language and name from presence too (they may not have sent anything since this screen opened).
+  const presentName = cleanName(localPresent?.name) || null;
   useEffect(() => {
     if (localPresent && !r.current.local) {
-      r.current.local = { pid: localPresent.pid, language: localPresent.language ?? MANDARIN };
+      r.current.local = { pid: localPresent.pid, language: localPresent.language ?? MANDARIN, name: presentName };
     }
-  }, [localPresent]);
+    if (presentName && r.current.local) r.current.local.name = presentName;
+  }, [localPresent, presentName]);
+  const localName = presentName ?? messageName;
 
   const toLocal = useCallback((msg: ServerMessage) => send({ to: 'local', msg }), [send]);
 
@@ -160,6 +167,7 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
             ...input,
             userLanguage: { code: userLanguage.code, name: userLanguage.name },
             localLanguage,
+            localName: s.local?.name ?? null,
             context: s.context,
             recent: s.recent.slice(-RECENT_LINES),
             introduced: s.introduced,
@@ -238,7 +246,9 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
         // Only one guest per conversation; a second phone gets told the room is taken.
         return send({ to: { pid: env.from }, msg: { t: 'error', code: 'room_full', message: '这个二维码已被另一部手机使用。' } });
       }
-      s.local = { pid: env.from, language: env.language ?? s.local?.language ?? MANDARIN };
+      const name = cleanName(env.name) || s.local?.name || null;
+      s.local = { pid: env.from, language: env.language ?? s.local?.language ?? MANDARIN, name };
+      if (name) setMessageName(name);
       const msg = env.msg;
       switch (msg.t) {
         case 'hello':
@@ -271,10 +281,9 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
       if (s.ended) return;
       s.ended = true;
       send({ to: 'all', msg: { t: 'ended', reason } });
-      void api.finish(s.summary, s.context);
       setEnded(true);
     },
-    [api, send]
+    [send]
   );
 
   // Close after 5 quiet minutes.
@@ -294,6 +303,7 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
   return {
     connected,
     localConnected: !!localPresent,
+    localName,
     captions,
     whispers,
     alerts,

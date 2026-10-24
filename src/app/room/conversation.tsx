@@ -1,5 +1,4 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -17,24 +16,27 @@ import {
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { RoomContexts, type ConvCaption, type RoomAlert, type RoomContext } from '@shared/rooms/protocol';
+import type { ConvCaption, RoomAlert } from '@shared/rooms/protocol';
 
+import { ChatColors } from '@/components/chat-ui';
 import { RoomQr } from '@/components/room-qr';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
-import { useLanguagePreference } from '@/lib/auth';
-import { forgetHostedRoom, getHostedRoom, getRoomContext } from '@/lib/rooms/session';
+import { Colors, Radius, Shadow, Spacing, themed } from '@/constants/theme';
+import { useAuth, useLanguagePreference } from '@/lib/auth';
+import { roomApi } from '@/lib/rooms/api';
+import { forgetHostedRoom, getHostedRoom, getRoomContext, getRoomPlace, setRoomContext, setRoomPlace } from '@/lib/rooms/session';
 import { useConversationHost } from '@/lib/rooms/use-conversation-host';
 import { useVadRecorder } from '@/lib/rooms/use-vad-recorder';
 import { stopVoice } from '@/lib/rooms/voice';
+import { logVisit } from '@/lib/visits';
 import { tx, useT } from '@/lib/i18n';
 
 type FeedItem = ConvCaption | { id: string; whisper: string; at: number };
 
-const ALERT_STYLE: Record<RoomAlert['type'], { icon: 'warning' | 'pricetag' | 'shield' | 'wallet'; bg: string; fg: string; label: string }> = {
-  allergy: { icon: 'warning', bg: '#FDE2E4', fg: '#A3172B', label: tx('Allergy check') },
-  price: { icon: 'pricetag', bg: '#FEF4DE', fg: '#8A5A00', label: tx('Price') },
-  budget: { icon: 'wallet', bg: '#FEF4DE', fg: '#8A5A00', label: tx('Over budget') },
-  scam: { icon: 'shield', bg: '#1B1A1F', fg: '#F2B33D', label: tx('Be careful') },
+const ALERT_STYLE: Record<RoomAlert['type'], { icon: 'warning' | 'pricetag' | 'shield' | 'wallet'; bg: keyof typeof Colors; fg: keyof typeof Colors; label: string }> = {
+  allergy: { icon: 'warning', bg: 'redSoft', fg: 'redText', label: tx('Allergy check') },
+  price: { icon: 'pricetag', bg: 'goldSoft', fg: 'goldText', label: tx('Price') },
+  budget: { icon: 'wallet', bg: 'goldSoft', fg: 'goldText', label: tx('Over budget') },
+  scam: { icon: 'shield', bg: 'strong', fg: 'gold', label: tx('Be careful') },
 };
 
 export default function ConversationRoom() {
@@ -43,15 +45,21 @@ export default function ConversationRoom() {
   // The QR page created the room and opened this screen when the local person joined.
   const [room] = useState(() => getHostedRoom('conversation'));
   const [initialContext] = useState(getRoomContext);
+  const { refreshProfile, profile, session } = useAuth();
+  const myName = profile?.display_name || session?.user.email?.split('@')[0] || '';
   const host = useConversationHost({
     code: room?.roomId ?? null,
     userLanguage: { code: language.code, name: language.name, speech: language.speech },
+    userName: myName,
     initialContext,
   });
-  const { captions, whispers, alerts, summary, context, phase, localConnected, connected, notice, ended } = host;
+  const { captions, whispers, alerts, summary, context, phase, localConnected, localName, connected, notice, ended } = host;
   const [dismissedAlert, setDismissedAlert] = useState(0);
   const [showQr, setShowQr] = useState(false);
-  const [contextOpen, setContextOpen] = useState(false);
+  // After ending: keep it (summarised into Hao DNA) or delete it.
+  const [askSave, setAskSave] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<ScrollViewInstance>(null);
@@ -85,15 +93,35 @@ export default function ConversationRoom() {
     host.sendText(text);
   };
 
-  const chooseContext = (c: RoomContext | null) => {
-    host.setContext(c);
-    setContextOpen(false);
+  const leave = () => {
+    forgetHostedRoom('conversation');
+    setRoomContext(null);
+    // Opened from a place card and they actually talked: ask later whether they went.
+    const place = getRoomPlace();
+    setRoomPlace(null);
+    if (place && captions.length) logVisit({ placeId: place.id, source: 'voice_room' }).catch(() => {});
+    router.back();
   };
 
   const endRoom = () => {
     host.end();
-    forgetHostedRoom('conversation');
-    router.back();
+    // Nothing is kept unless they choose to save it.
+    if (captions.some((c) => c.speaker !== 'AGENT')) setAskSave(true);
+    else leave();
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await roomApi.save({ captions, summary, context, language: { code: language.code, name: language.name }, names: { user: myName, local: localName } });
+      refreshProfile().catch(() => {});
+      leave();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : t('Something went wrong'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!room) {
@@ -128,12 +156,16 @@ export default function ConversationRoom() {
         <View style={styles.center}>
           <View style={styles.statusRow}>
             <View style={[styles.dot, { backgroundColor: connected && localConnected ? '#3CCB8F' : Colors.gold }]} />
-            <Text style={styles.status}>{!connected ? t('Reconnecting…') : localConnected ? t('Connected') : t('Waiting for them')}</Text>
+            <Text style={styles.status} numberOfLines={1}>
+              {!connected
+                ? t('Reconnecting…')
+                : localConnected
+                  ? localName
+                    ? t('Talking with {name}', { name: localName })
+                    : t('Connected')
+                  : t('Waiting for them')}
+            </Text>
           </View>
-          <Pressable onPress={() => setContextOpen(true)} style={styles.contextChip} accessibilityLabel={t('Change where you are')}>
-            <Text style={styles.contextText}>{context ? t(RoomContexts[context].label) : t('Set place')}</Text>
-            <Ionicons name="chevron-down" size={12} color={Colors.inkSoft} />
-          </Pressable>
         </View>
         <Pressable onPress={() => setShowQr(true)} style={styles.topBtn} accessibilityLabel={t('Show QR code')}>
           <Ionicons name="qr-code-outline" size={20} color={Colors.ink} />
@@ -141,14 +173,14 @@ export default function ConversationRoom() {
       </View>
 
       {alert ? (
-        <Animated.View entering={FadeInUp} style={[styles.alert, { backgroundColor: ALERT_STYLE[alert.type].bg }]}>
-          <Ionicons name={ALERT_STYLE[alert.type].icon} size={20} color={ALERT_STYLE[alert.type].fg} />
+        <Animated.View entering={FadeInUp} style={[styles.alert, { backgroundColor: Colors[ALERT_STYLE[alert.type].bg] }]}>
+          <Ionicons name={ALERT_STYLE[alert.type].icon} size={20} color={Colors[ALERT_STYLE[alert.type].fg]} />
           <View style={{ flex: 1 }}>
-            <Text style={[styles.alertLabel, { color: ALERT_STYLE[alert.type].fg }]}>{t(ALERT_STYLE[alert.type].label)}</Text>
+            <Text style={[styles.alertLabel, { color: Colors[ALERT_STYLE[alert.type].fg] }]}>{t(ALERT_STYLE[alert.type].label)}</Text>
             <Text style={[styles.alertText, alert.type === 'scam' && { color: '#fff' }]}>{alert.message}</Text>
           </View>
           <Pressable onPress={() => setDismissedAlert(alerts.length)} hitSlop={8}>
-            <Text style={[styles.alertOk, { color: ALERT_STYLE[alert.type].fg }]}>OK</Text>
+            <Text style={[styles.alertOk, { color: Colors[ALERT_STYLE[alert.type].fg] }]}>OK</Text>
           </Pressable>
         </Animated.View>
       ) : null}
@@ -171,12 +203,12 @@ export default function ConversationRoom() {
             <View style={styles.empty}>
               <Ionicons name="mic-circle-outline" size={44} color={Colors.red} />
               <Text style={styles.emptyTitle}>{localConnected ? t('You’re connected') : t('Waiting for them to join')}</Text>
-              <Text style={styles.emptyBody}>{t('Tap the circle once and speak. Hao listens, talks to them in Chinese with its own voice, and only checks with you for allergies, payments or anything over budget.')}</Text>
+              <Text style={styles.emptyBody}>{t('Just talk. Tap the circle and speak; Hao translates for them in Chinese, and their answer for you.')}</Text>
             </View>
           ) : null}
           {feed.map((item) => (
             <Animated.View key={item.id} entering={FadeInUp.duration(200)}>
-              <FeedRow item={item} />
+              <FeedRow item={item} localName={localName} />
             </Animated.View>
           ))}
         </ScrollView>
@@ -224,32 +256,35 @@ export default function ConversationRoom() {
 
       <Modal visible={showQr} transparent animationType="fade" onRequestClose={() => setShowQr(false)}>
         <Pressable style={styles.backdrop} onPress={() => setShowQr(false)}>
-          <LinearGradient colors={[Colors.red, Colors.redDark]} style={styles.qrSheet}>
+          <View style={styles.qrSheet}>
             <RoomQr joinUrl={room.joinUrl} roomId={room.roomId} captionZh="请用微信或相机扫码加入对话" caption={t('They can scan again to rejoin')} />
-          </LinearGradient>
+          </View>
         </Pressable>
       </Modal>
 
-      <Modal visible={contextOpen} transparent animationType="fade" onRequestClose={() => setContextOpen(false)}>
-        <Pressable style={styles.backdrop} onPress={() => setContextOpen(false)}>
-          <View style={styles.contextSheet}>
-            <Text style={styles.contextTitle}>{t('Where are you?')}</Text>
-            <Text style={styles.contextBody}>{t('Hao uses this to ask the right questions.')}</Text>
-            <View style={styles.contextGrid}>
-              {(Object.keys(RoomContexts) as RoomContext[]).map((c) => (
-                <Pressable key={c} onPress={() => chooseContext(c)} style={[styles.contextOption, context === c && styles.contextOptionActive]}>
-                  <Text style={[styles.contextOptionText, context === c && { color: '#fff' }]}>{t(RoomContexts[c].label)}</Text>
-                </Pressable>
-              ))}
-            </View>
+      <Modal visible={askSave} transparent animationType="slide" onRequestClose={() => {}}>
+        <View style={styles.saveBackdrop}>
+          <View style={styles.saveSheet}>
+            <Ionicons name="bookmark" size={28} color={ChatColors.accent} />
+            <Text style={styles.saveTitle}>{t('Save this conversation?')}</Text>
+            <Text style={styles.saveBody}>
+              {t('Hao keeps a short summary in your chats and adds what it learned to your Hao DNA, like “ordered at a restaurant” or “how to open a bank card”. Delete keeps nothing.')}
+            </Text>
+            {saveError ? <Text style={styles.notice}>{saveError}</Text> : null}
+            <Pressable onPress={save} disabled={saving} style={[styles.saveBtn, saving && { opacity: 0.6 }]} accessibilityRole="button">
+              <Text style={styles.saveBtnText}>{saving ? t('Saving…') : t('Save to Hao')}</Text>
+            </Pressable>
+            <Pressable onPress={leave} disabled={saving} style={styles.deleteBtn} accessibilityRole="button">
+              <Text style={styles.deleteBtnText}>{t('Delete')}</Text>
+            </Pressable>
           </View>
-        </Pressable>
+        </View>
       </Modal>
     </SafeAreaView>
   );
 }
 
-function FeedRow({ item }: { item: FeedItem }) {
+function FeedRow({ item, localName }: { item: FeedItem; localName: string | null }) {
   const t = useT();
   if ('whisper' in item) {
     return (
@@ -265,6 +300,7 @@ function FeedRow({ item }: { item: FeedItem }) {
   if (item.speaker === 'USER') {
     return (
       <View style={[styles.bubble, styles.userBubble]}>
+        <Text style={styles.userLabel}>{t('You')}</Text>
         <Text style={styles.userText}>{item.text}</Text>
       </View>
     );
@@ -272,7 +308,7 @@ function FeedRow({ item }: { item: FeedItem }) {
   if (item.speaker === 'LOCAL') {
     return (
       <View style={[styles.bubble, styles.localBubble]}>
-        <Text style={styles.localLabel}>{t('They said')}</Text>
+        <Text style={styles.localLabel}>{localName ?? t('They said')}</Text>
         <Text style={styles.localText}>{item.text}</Text>
       </View>
     );
@@ -284,15 +320,17 @@ function FeedRow({ item }: { item: FeedItem }) {
         <View style={styles.haoBadge}>
           <Text style={styles.haoBadgeText}>好</Text>
         </View>
-        <Text style={[styles.haoLabel, toLocal && { color: Colors.gold }]}>{toLocal ? t('Hao → them') : t('Hao → you')}</Text>
+        <Text style={[styles.haoLabel, toLocal && { color: Colors.gold }]}>
+          {toLocal ? (localName ? t('Hao → {name}', { name: localName }) : t('Hao → them')) : t('Hao → you')}
+        </Text>
       </View>
       <Text style={[styles.haoText, toLocal && { color: '#fff', fontSize: 20, fontWeight: '800' }]}>{item.text}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.paper },
+const styles = themed(() => StyleSheet.create({
+  container: { flex: 1, backgroundColor: ChatColors.background },
   missing: { justifyContent: 'center', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg },
   missingText: { fontSize: 15, color: Colors.inkSoft, textAlign: 'center' },
   missingBtn: { paddingHorizontal: Spacing.lg, paddingVertical: 12, borderRadius: Radius.pill, backgroundColor: Colors.red },
@@ -303,8 +341,6 @@ const styles = StyleSheet.create({
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dot: { width: 8, height: 8, borderRadius: 4 },
   status: { fontSize: 14, fontWeight: '800', color: Colors.ink },
-  contextChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 3, borderRadius: Radius.pill, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.line },
-  contextText: { fontSize: 12, fontWeight: '700', color: Colors.inkSoft },
   alert: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginHorizontal: Spacing.md, marginBottom: Spacing.sm, padding: Spacing.md, borderRadius: Radius.md },
   alertLabel: { fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
   alertText: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: Colors.ink, marginTop: 2 },
@@ -318,18 +354,19 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 20, fontWeight: '800', color: Colors.ink },
   emptyBody: { fontSize: 14, lineHeight: 21, color: Colors.inkSoft, textAlign: 'center' },
   bubble: { maxWidth: '85%', padding: Spacing.md, borderRadius: Radius.lg },
-  userBubble: { alignSelf: 'flex-end', backgroundColor: Colors.red, borderBottomRightRadius: 6 },
+  userBubble: { alignSelf: 'flex-end', backgroundColor: ChatColors.userBubble, borderRadius: 12, borderTopRightRadius: 3 },
   userText: { color: '#fff', fontSize: 16, lineHeight: 22, fontWeight: '600' },
-  localBubble: { alignSelf: 'flex-start', backgroundColor: Colors.card, borderBottomLeftRadius: 6, borderWidth: 1, borderColor: Colors.line },
-  localLabel: { fontSize: 11, fontWeight: '800', color: Colors.muted, textTransform: 'uppercase', letterSpacing: 1 },
+  userLabel: { fontSize: 11, fontWeight: '800', color: ChatColors.soft, marginBottom: 2 },
+  localBubble: { alignSelf: 'flex-start', backgroundColor: ChatColors.haoBubble, borderRadius: 12, borderTopLeftRadius: 3 },
+  localLabel: { fontSize: 12, fontWeight: '800', color: Colors.jade },
   localText: { fontSize: 18, fontWeight: '700', color: Colors.ink, marginTop: 4 },
   hao: { borderRadius: Radius.lg, padding: Spacing.md },
-  haoToLocal: { backgroundColor: Colors.ink },
+  haoToLocal: { backgroundColor: Colors.strong },
   haoToUser: { backgroundColor: Colors.goldSoft },
   haoHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
   haoBadge: { width: 22, height: 22, borderRadius: 7, backgroundColor: Colors.red, alignItems: 'center', justifyContent: 'center' },
   haoBadgeText: { color: Colors.gold, fontWeight: '900', fontSize: 12 },
-  haoLabel: { fontSize: 11, fontWeight: '800', color: '#A26A00', letterSpacing: 1, textTransform: 'uppercase' },
+  haoLabel: { fontSize: 11, fontWeight: '800', color: Colors.goldText, letterSpacing: 1, textTransform: 'uppercase' },
   haoText: { fontSize: 15, lineHeight: 22, color: Colors.ink, fontWeight: '600' },
   whisper: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, alignSelf: 'center', maxWidth: '92%', paddingHorizontal: 12, paddingVertical: 8, borderRadius: Radius.md, backgroundColor: Colors.card, borderWidth: 1, borderStyle: 'dashed', borderColor: Colors.line },
   whisperText: { flex: 1, fontSize: 13, lineHeight: 18, color: Colors.inkSoft, fontStyle: 'italic' },
@@ -347,12 +384,13 @@ const styles = StyleSheet.create({
   levelRing: { position: 'absolute', width: 112, height: 112, borderRadius: 56, borderWidth: 3, borderColor: 'rgba(215,38,61,0.35)' },
   hint: { fontSize: 14, fontWeight: '700', color: Colors.inkSoft, textAlign: 'center' },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', padding: Spacing.md },
-  qrSheet: { borderRadius: 32, padding: Spacing.md },
-  contextSheet: { backgroundColor: Colors.paper, borderRadius: 24, padding: Spacing.lg, gap: Spacing.sm },
-  contextTitle: { fontSize: 20, fontWeight: '800', color: Colors.ink },
-  contextBody: { fontSize: 14, color: Colors.inkSoft },
-  contextGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginTop: Spacing.sm },
-  contextOption: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: Radius.pill, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.line },
-  contextOptionActive: { backgroundColor: Colors.red, borderColor: Colors.red },
-  contextOptionText: { fontSize: 14, fontWeight: '700', color: Colors.ink },
-});
+  qrSheet: { borderRadius: 32, padding: Spacing.md, backgroundColor: Colors.paper },
+  saveBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
+  saveSheet: { backgroundColor: Colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: Spacing.lg, paddingBottom: Spacing.xl, gap: Spacing.sm, alignItems: 'center' },
+  saveTitle: { fontSize: 20, fontWeight: '800', color: Colors.ink },
+  saveBody: { fontSize: 14, lineHeight: 21, color: Colors.inkSoft, textAlign: 'center', marginBottom: Spacing.sm },
+  saveBtn: { alignSelf: 'stretch', minHeight: 50, borderRadius: Radius.pill, backgroundColor: ChatColors.accent, alignItems: 'center', justifyContent: 'center' },
+  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  deleteBtn: { alignSelf: 'stretch', minHeight: 50, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
+  deleteBtnText: { color: Colors.red, fontSize: 16, fontWeight: '700' },
+}));

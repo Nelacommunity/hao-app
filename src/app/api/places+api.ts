@@ -2,11 +2,17 @@
 //   ?ids=B000A8UIN8,B0FFG…                → those places (up to 10)
 //   ?lat&lng[&radius]                      → around a GCJ-02 point, closest first
 //   ?city=北京                              → in a city
-// plus optional &category=landmark|nature|culture|market|food, &q=keywords and &page.
-import { AllCategoryTypes, CategoryMeta, isCategory, isPlaceId } from '@/data/places';
+// plus optional &lang=<app language code> (&langName for a custom language), &category=landmark|nature|culture|market|food, &q=keywords and &page.
+// Results go through a shared cache (lib/server/place-cache) so AMap is asked as rarely as possible.
+import { AllCategoryTypes, CategoryMeta, isCategory, isPlaceId, type Place } from '@/data/places';
 import { authenticate } from '@/lib/server/api';
 import { AmapError, placesById, searchAround, searchCity } from '@/lib/server/amap';
+import { localizePlaces, placeLanguage } from '@/lib/server/place-i18n';
+import { cachedPlacesById, cachedSearch, snapNearby, withDistances } from '@/lib/server/place-cache';
 import { allow, tooMany } from '@/lib/server/rate-limit';
+
+/** The traveller's language from ?lang (and ?langName for a custom one); null keeps AMap's English. */
+const languageOf = (params: URLSearchParams) => placeLanguage(params.get('lang'), params.get('langName'));
 
 export async function GET(request: Request) {
   const user = await authenticate(request);
@@ -18,13 +24,17 @@ export async function GET(request: Request) {
   const types = isCategory(category) ? CategoryMeta[category].types : params.get('q') ? undefined : AllCategoryTypes;
   const keywords = params.get('q')?.trim().slice(0, 80) || undefined;
   const page = Math.min(8, Math.max(1, Number(params.get('page')) || 1));
+  const language = languageOf(params);
+  const reply = async (places: Place[]) => Response.json({ places: await localizePlaces(places, language) });
+  // Everything besides the area that changes AMap's answer, for the cache key.
+  const what = `${isCategory(category) ? category : keywords ? '' : 'all'}:${keywords?.toLowerCase() ?? ''}:${page}`;
 
   try {
     const ids = params.get('ids');
     if (ids) {
       const list = ids.split(',').filter(isPlaceId);
       if (!list.length) return Response.json({ error: 'Invalid ids' }, { status: 400 });
-      return Response.json({ places: await placesById(list) });
+      return reply(await cachedPlacesById(list, placesById));
     }
 
     const lat = Number(params.get('lat'));
@@ -34,11 +44,18 @@ export async function GET(request: Request) {
         return Response.json({ error: 'Invalid location' }, { status: 400 });
       }
       const radius = Math.min(50_000, Math.max(100, Number(params.get('radius')) || 5000));
-      return Response.json({ places: await searchAround({ lat, lng, radius, types, keywords, page }) });
+      const cell = snapNearby(lat, lng, radius);
+      const found = await cachedSearch(`around:${cell.cellKey}:${radius}:${what}`, () =>
+        searchAround({ lat: cell.lat, lng: cell.lng, radius: cell.radius, types, keywords, page })
+      );
+      // Keyword searches are ranked by relevance; the rest closest first.
+      return reply(withDistances(found, lat, lng, !keywords));
     }
 
     const city = params.get('city')?.trim().slice(0, 20);
-    if (city) return Response.json({ places: await searchCity({ city, types, keywords, page }) });
+    if (city) {
+      return reply(await cachedSearch(`city:${city}:${what}`, () => searchCity({ city, types, keywords, page })));
+    }
 
     return Response.json({ error: 'Pass ids, lat and lng, or city' }, { status: 400 });
   } catch (e) {

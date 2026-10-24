@@ -1,7 +1,7 @@
 import type { LanguageTarget } from '@shared/ai/types';
 
 import { authenticate, providerOrError } from '@/lib/server/api';
-import { memoryEnabled, recallMemories, remember, userClient } from '@/lib/server/memory';
+import { memoryEnabled, recallMemories, remember, toolUses, userClient } from '@/lib/server/memory';
 
 type MemoryRequest = {
   language: LanguageTarget;
@@ -41,7 +41,8 @@ export async function POST(request: Request) {
     });
     await remember(db, turn.new_memories, 'memory');
     const cited = memories.filter((m) => turn.cited_ids.includes(m.id));
-    return Response.json({ answer: turn.answer, cited, saved: turn.new_memories.length });
+    const tools = toolUses({ recalled: memories.length, saved: turn.new_memories });
+    return Response.json({ answer: turn.answer, cited, saved: turn.new_memories.length, tools });
   } catch (e) {
     console.error('Memory provider error', e);
     return Response.json({ error: 'Hao could not search your memory right now. Try again.' }, { status: 502 });

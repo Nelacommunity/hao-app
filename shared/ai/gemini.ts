@@ -4,6 +4,7 @@ import {
   formatGuideState,
   formatSoloLog,
   knowledgeContext,
+  knowledgeWithSources,
   formatMemories,
   roomAgentSchema,
   roomAgentSystemPrompt,
@@ -19,10 +20,27 @@ import {
   soloSystemPrompt,
   translateSchema,
   translateSystemPrompt,
+  placeTranslateSchema,
+  placeTranslateSystemPrompt,
+  formatShownPlaces,
+  PLACES_CATEGORIES,
+  PLACES_FILTERS,
+  PLACES_SCOPES,
+  PLACES_TOOLS,
+  dnaCaptureRules,
+  placesPlanSchema,
+  placesPlanSystemPrompt,
+  placesReplySchema,
+  placesReplySystemPrompt,
   uiTranslateSchema,
   uiTranslateSystemPrompt,
+  twinSchema,
+  twinSystemPrompt,
+  conversationSummarySchema,
+  conversationSummarySystemPrompt,
   type JsonSchema,
 } from './prompts';
+import { emptyTwinUpdates, twinDna, twinMissing } from './twin';
 import { GuideApps } from './china-guide';
 import {
   ProviderError,
@@ -31,7 +49,15 @@ import {
   type GuideTurn,
   type MemoryTurn,
   type NewMemory,
+  type PlacesCategory,
+  type PlacesFilter,
+  type PlacesPlan,
+  type PlacesReply,
+  type PlacesTool,
+  type PlaceText,
   type RoomAgentTurn,
+  type TwinTurn,
+  type ConversationSummary,
 } from './types';
 import { z } from 'zod';
 
@@ -271,7 +297,7 @@ export function geminiProvider(config: GeminiConfig): AgentProvider {
     async soloTurn(input) {
       const who = input.speaker === 'local' ? 'LOCAL person' : 'TRAVELLER';
       const recentText = input.log.slice(-3).map((e) => ('text' in e ? e.text : e.gloss)).join(' ');
-      const knowledge = knowledgeContext(`${input.text ?? ''} ${recentText}`, input.memories, { limit: 2, maxChars: 7000 });
+      const { context: knowledge, sources } = knowledgeWithSources(`${input.text ?? ''} ${recentText}`, input.memories, { limit: 2, maxChars: 7000 });
       const turn = await generateJson<AgentTurn>(
         soloSystemPrompt(input.travellerLanguage || 'English'),
         [
@@ -282,7 +308,7 @@ export function geminiProvider(config: GeminiConfig): AgentProvider {
         ],
         soloSchema
       );
-      return { ...turn, memories: cleanMemories(turn.memories) };
+      return { ...turn, memories: cleanMemories(turn.memories), sources };
     },
 
     async transcribeAndTranslate({ audio, sourceLanguage, targets }) {
@@ -300,12 +326,12 @@ export function geminiProvider(config: GeminiConfig): AgentProvider {
     async guideTurn(input) {
       const lastAsked = input.history.filter((m) => m.role === 'user').slice(-2).map((m) => m.text);
       const active = input.tasks.find((t) => t.id === input.activeTaskId)?.title ?? '';
-      const knowledge = knowledgeContext([input.text, input.text, ...lastAsked, active].join(' '), input.memories);
+      const { context: knowledge, sources } = knowledgeWithSources([input.text, input.text, ...lastAsked, active].join(' '), input.memories);
       const turn = await generateJson<GuideTurn>(
-        guideSystemPrompt(input.language, input.preferences, input.city),
+        `${guideSystemPrompt(input.language, input.preferences, input.city)}\n\n${dnaCaptureRules}`,
         [
           {
-            text: `What you remember about the traveller:\n${input.memories || '(nothing yet)'}${knowledge}\n\n${formatGuideState(input.history, input.tasks, input.activeTaskId)}\n\nUser now says:\n${input.text}`,
+            text: `What you remember about the traveller:\n${input.memories || '(nothing yet)'}${knowledge}${input.story ? `\n\n${input.story}` : ''}\n\n${formatGuideState(input.history, input.tasks, input.activeTaskId)}\n\nUser now says:\n${input.text}`,
           },
         ],
         guideSchema
@@ -318,6 +344,8 @@ export function geminiProvider(config: GeminiConfig): AgentProvider {
         quick_replies: (turn.quick_replies ?? []).slice(0, 4),
         apps: (turn.apps ?? []).filter((a) => a in GuideApps).slice(0, 3),
         memories: cleanMemories(turn.memories),
+        sources,
+        dna: { ...emptyTwinUpdates(), ...(turn.dna ?? {}) },
       };
     },
 
@@ -333,6 +361,97 @@ export function geminiProvider(config: GeminiConfig): AgentProvider {
         answer: turn.answer ?? '',
         cited_ids: (turn.cited_ids ?? []).filter((id) => known.has(id)).slice(0, 8),
         new_memories: cleanMemories(turn.new_memories),
+      };
+    },
+
+    async placesPlan(input) {
+      const chat = input.history.slice(-10).map((m) => `${m.role === 'user' ? 'Traveller' : 'Hao'}: ${m.text}`).join('\n');
+      const plan = await generateJson<PlacesPlan>(
+        placesPlanSystemPrompt(input.language, input.preferences, input.about, input.where),
+        [
+          {
+            text: `What you remember about the traveller:\n${input.memories || '(nothing yet)'}\n\nPlaces shown in this chat (ref. name [category]):\n${formatShownPlaces(input.shown)}\n\nRecent chat:\n${chat || '(new chat)'}\n\nTraveller says:\n${input.text}`,
+          },
+        ],
+        placesPlanSchema
+      );
+      // Model output is untrusted: keep only valid tools, categories and filters.
+      const refs = new Set(input.shown.map((p) => p.ref));
+      return {
+        tool: PLACES_TOOLS.includes(plan.tool) ? (plan.tool as PlacesTool) : 'none',
+        query: String(plan.query ?? '').trim().slice(0, 60),
+        category: PLACES_CATEGORIES.includes(plan.category) ? (plan.category as PlacesCategory) : '',
+        near: String(plan.near ?? '').trim().slice(0, 40),
+        filters: (plan.filters ?? []).filter((f): f is PlacesFilter => PLACES_FILTERS.includes(f)).slice(0, 4),
+        place_ref: refs.has(plan.place_ref) ? plan.place_ref : 0,
+        place_name: String(plan.place_name ?? '').trim().slice(0, 80),
+        rating: plan.rating === 1 || plan.rating === -1 ? plan.rating : 0,
+        tags: (plan.tags ?? []).filter((t) => typeof t === 'string').slice(0, 5),
+        scope: PLACES_SCOPES.includes(plan.scope) ? plan.scope : '',
+        // Validated against the profile by the route (applyTwinUpdates).
+        dna: { ...emptyTwinUpdates(), ...(plan.dna ?? {}) },
+        reply: String(plan.reply ?? '').slice(0, 600),
+        quick_replies: (plan.quick_replies ?? []).filter((q) => typeof q === 'string' && q.trim()).slice(0, 4),
+      };
+    },
+
+    async twinTurn(input) {
+      const chat = input.history.slice(-14).map((m) => `${m.role === 'user' ? 'User' : 'Hao'}: ${m.text}`).join('\n');
+      const detected = [
+        input.detected.nationality && input.detected.nationality !== input.profile.nationality ? `Country (phone region): ${input.detected.nationality}` : '',
+        input.detected.city && input.detected.city !== input.profile.city ? `City in China (GPS): ${input.detected.city}` : '',
+      ].filter(Boolean);
+      const turn = await generateJson<TwinTurn>(
+        twinSystemPrompt(input.language),
+        [
+          {
+            text: `Hao DNA so far:\n${twinDna(input.profile)}\n\nProbably still unknown: ${twinMissing(input.profile).join(', ') || 'nothing'}\n\nDETECTED:\n${detected.join('\n') || '(nothing new)'}\n\nChat so far:\n${chat || '(new conversation: greet the user and ask the first question)'}\n\n${input.text ? `User says:\n${input.text}` : 'Start the conversation.'}`,
+          },
+        ],
+        twinSchema
+      );
+      // The route validates updates (applyTwinUpdates); here only shape and size.
+      return {
+        reply: String(turn.reply ?? '').trim().slice(0, 600),
+        quick_replies: (turn.quick_replies ?? []).filter((q) => typeof q === 'string' && q.trim()).slice(0, 5),
+        updates: { ...emptyTwinUpdates(), ...(turn.updates ?? {}) },
+        done: turn.done === true,
+      };
+    },
+
+    async summarizeConversation(input) {
+      const transcript = input.lines
+        .slice(-80)
+        .map((l) => `${l.speaker === 'USER' ? `Traveller${input.names?.user ? ` (${input.names.user})` : ''}` : l.speaker === 'LOCAL' ? `Local${input.names?.local ? ` (${input.names.local})` : ''}` : 'Hao'}: ${l.text}`)
+        .join('\n');
+      const out = await generateJson<ConversationSummary>(
+        conversationSummarySystemPrompt(input.language),
+        [{ text: `Where: ${input.context || 'a casual conversation'}\n\nConversation:\n${transcript}` }],
+        conversationSummarySchema
+      );
+      return {
+        title: String(out.title ?? '').trim().slice(0, 60) || 'Conversation',
+        summary: String(out.summary ?? '').trim().slice(0, 600),
+        learned: (out.learned ?? []).filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim().slice(0, 200)).slice(0, 5),
+        memories: cleanMemories(out.memories),
+        dna: { ...emptyTwinUpdates(), ...(out.dna ?? {}) },
+      };
+    },
+
+    async placesReply(input) {
+      const chat = input.history.slice(-6).map((m) => `${m.role === 'user' ? 'Traveller' : 'Hao'}: ${m.text}`).join('\n');
+      const out = await generateJson<PlacesReply>(
+        placesReplySystemPrompt(input.language),
+        [
+          {
+            text: `Recent chat:\n${chat || '(new chat)'}\n\nTraveller says:\n${input.text}\n\nTool ${input.tool} returned:\n${input.results}${input.dna ? `\n\nTraveller's Hao DNA:\n${input.dna}` : ''}`,
+          },
+        ],
+        placesReplySchema
+      );
+      return {
+        reply: String(out.reply ?? '').slice(0, 800),
+        quick_replies: (out.quick_replies ?? []).filter((q) => typeof q === 'string' && q.trim()).slice(0, 4),
       };
     },
 
@@ -437,6 +556,30 @@ export function geminiProvider(config: GeminiConfig): AgentProvider {
         const text = typeof out[i] === 'string' ? out[i].trim() : '';
         const ok = out.length === strings.length && text && text.length <= source.length * 4 + 40 && placeholders(text) === placeholders(source);
         return ok ? text : source;
+      });
+    },
+
+    async translatePlaces({ places, target }) {
+      const raw = await generateJson<{ places: PlaceText[] }>(
+        placeTranslateSystemPrompt(target),
+        [{ text: JSON.stringify({ places }) }],
+        placeTranslateSchema,
+        'fast'
+      );
+      const out = Array.isArray(raw.places) ? raw.places : [];
+      if (out.length !== places.length) return places.map(() => null);
+      // Untrusted model output: keep only well-formed, reasonably sized text.
+      const fits = (text: unknown, source: string): text is string =>
+        typeof text === 'string' && !!text.trim() && text.length <= source.length * 4 + 60;
+      return places.map((source, i) => {
+        const p = out[i];
+        if (!p || !fits(p.name, source.name)) return null;
+        return {
+          name: p.name.trim(),
+          address: fits(p.address, source.address) ? p.address.trim() : source.address,
+          type: fits(p.type, source.type) ? p.type.trim() : source.type,
+          tags: Array.isArray(p.tags) && p.tags.length === source.tags.length ? p.tags.map((t, j) => (fits(t, source.tags[j]) ? t.trim() : source.tags[j])) : source.tags,
+        };
       });
     },
   };

@@ -1,4 +1,4 @@
-import type { LanguageTarget, MemoryItem, MemoryKind } from '@shared/ai/types';
+import type { LanguageTarget, MemoryItem, MemoryKind, ToolUse } from '@shared/ai/types';
 
 import { translate, tx } from '@/lib/i18n';
 import { supabase } from '@/lib/supabase';
@@ -14,7 +14,7 @@ export const MemoryKindMeta: Record<MemoryKind, { label: string; icon: 'chatbubb
   note: { label: tx('Note'), icon: 'bookmark' },
 };
 
-export type MemoryAnswer = { answer: string; cited: MemoryItem[]; saved: number };
+export type MemoryAnswer = { answer: string; cited: MemoryItem[]; saved: number; tools?: ToolUse[] };
 
 export async function askMemory(input: {
   language: LanguageTarget;

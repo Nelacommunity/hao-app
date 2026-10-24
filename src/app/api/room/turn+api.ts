@@ -1,10 +1,11 @@
 import { parsePreferences } from '@shared/ai/preferences';
 import { formatMemories } from '@shared/ai/prompts';
-import type { AudioInput, LanguageTarget, NewMemory, RoomAgentTurn, RoomTurnLine } from '@shared/ai/types';
+import type { AudioInput, LanguageTarget, RoomAgentTurn, RoomTurnLine } from '@shared/ai/types';
 import { RoomContexts, type RoomContext, type RoomSummary } from '@shared/rooms/protocol';
+import { cleanName } from '@shared/rooms/realtime';
 
 import { authenticate, providerOrError } from '@/lib/server/api';
-import { recallMemories, remember, userClient } from '@/lib/server/memory';
+import { recallMemories, userClient } from '@/lib/server/memory';
 import { allow, tooMany } from '@/lib/server/rate-limit';
 
 type TurnRequest = {
@@ -13,6 +14,7 @@ type TurnRequest = {
   text?: string;
   userLanguage: LanguageTarget;
   localLanguage: LanguageTarget;
+  localName?: string | null;
   context: RoomContext | null;
   recent: RoomTurnLine[];
   introduced: boolean;
@@ -29,7 +31,7 @@ const MAX_AUDIO_BASE64 = 6 * 1024 * 1024;
 const lang = (l: LanguageTarget | undefined, fallback: LanguageTarget) =>
   l && typeof l.code === 'string' && typeof l.name === 'string' ? { code: l.code.slice(0, 32), name: l.name.slice(0, 64) } : fallback;
 
-/** One live-room turn: speech to text → Hao agent (with profile + memory) → save memories, streamed as it happens. */
+/** One live-room turn: speech to text → Hao agent (with profile + memory), streamed as it happens. Nothing is saved here. */
 export async function POST(request: Request) {
   const user = await authenticate(request);
   const db = userClient(request);
@@ -91,6 +93,7 @@ export async function POST(request: Request) {
           const turn = await provider.roomAgentTurn(
             {
               userName: profile?.display_name || user.email?.split('@')[0] || 'my friend',
+              localName: cleanName(body.localName) || null,
               userLanguage,
               localLanguage,
               preferences: parsePreferences(profile?.preferences),
@@ -105,7 +108,7 @@ export async function POST(request: Request) {
             },
             onSay
           );
-          return { turn, memoryOn: profile?.memory_enabled ?? true };
+          return { turn };
         };
         const turnReq = agentTurn(typed);
         turnReq.catch(() => {}); // awaited below; this only stops an unhandled rejection if transcription fails first
@@ -122,21 +125,14 @@ export async function POST(request: Request) {
         emit({ t: 'said', said });
         if (heldSay) onSay(heldSay);
 
-        let { turn, memoryOn } = await turnReq;
+        let { turn } = await turnReq;
         // The transcriber heard words but the listening agent did not: answer from the transcript instead.
-        if (!typed && !turn.say_to_other && !turn.say_to_speaker) ({ turn, memoryOn } = await agentTurn(said));
+        if (!typed && !turn.say_to_other && !turn.say_to_speaker) ({ turn } = await agentTurn(said));
         timing.llm = Date.now() - t;
         console.log(`[turn] user=${user.id.slice(0, 8)} speaker=${body.speaker} stt=${timing.stt}ms say=${firstSay}ms llm=${timing.llm}ms`);
         emit({ t: 'done', said, turn, timing });
-
-        if (memoryOn) {
-          const toSave: NewMemory[] = [...turn.memories];
-          if (body.speaker === 'LOCAL' && !toSave.some((m) => m.kind === 'said')) {
-            const where = context ? `${RoomContexts[context].label}: ` : '';
-            toSave.push({ kind: 'said', text: `${where}the local said "${said}"${turn.say_to_other ? ` (${turn.say_to_other})` : ''}` });
-          }
-          void remember(db, toSave, 'interpret');
-        }
+        // Nothing is saved during the conversation: at the end the user chooses Save (summarised into their
+        // Hao DNA and memory, /api/room/finish) or Delete.
       } catch (e) {
         console.error('Room turn failed', e);
         emit({ t: 'error', error: 'Hao had a problem with that turn. Please try again.' });

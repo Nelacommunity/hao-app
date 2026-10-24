@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import Animated, {
@@ -18,9 +18,9 @@ import { CategoryTiles } from '@/components/category-tiles';
 import { PlaceMap } from '@/components/place-map';
 import { PlaceThumb, placeMeta } from '@/components/place-thumb';
 import { RouteCard } from '@/components/route-card';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Colors, Radius, Shadow, Spacing, themed } from '@/constants/theme';
 import { CategoryMeta, Cities, type CityId, type Place, type PlaceCategory } from '@/data/places';
-import { useDirections, type TravelMode } from '@/lib/directions';
+import { formatDuration, formatMeters, useDirections, type TravelMode } from '@/lib/directions';
 import { distanceKm, formatDistance, useCurrentLocation } from '@/lib/location';
 import { useT } from '@/lib/i18n';
 import { getCachedPlace, usePlaces } from '@/lib/places';
@@ -35,14 +35,20 @@ const SPRING = { damping: 22, stiffness: 200, mass: 0.8 };
 
 export default function ExploreScreen() {
   const t = useT();
-  const [area, setArea] = useState<Area>('beijing');
+  // Near me first; a city is the fallback when location is refused, or the user's pick.
+  const [area, setArea] = useState<Area>('nearby');
   const [category, setCategory] = useState<PlaceCategory | 'all'>('all');
   const [selectedId, setSelectedId] = useState<string>();
   const [menuOpen, setMenuOpen] = useState(false);
   // Bumped on "locate me" so the map re-centres even if the position hasn't changed.
   const [recenter, setRecenter] = useState(0);
-  const location = useCurrentLocation();
+  const location = useCurrentLocation({ askOnMount: true });
   const here = location.coords;
+  // Where the map centres on the user: the first fix, and again on "locate me". Later fixes move the
+  // blue dot but not the camera, so the map stays where the user zoomed and panned.
+  const [anchor, setAnchor] = useState<typeof here>(null);
+  if (here && !anchor) setAnchor(here);
+  const shown: Area = area === 'nearby' && location.status === 'denied' ? 'beijing' : area;
   const insets = useSafeAreaInsets();
 
   // Pull-up sheet: collapsed (map only), half, or full (just below the area dropdown).
@@ -104,25 +110,32 @@ export default function ExploreScreen() {
     if (sheetHeight.get() < half - 8) sheetHeight.set(withSpring(half, SPRING));
   };
 
-  // "Directions" on a place page opens this tab with ?route=<placeId>.
-  const params = useLocalSearchParams<{ route?: string }>();
+  // "Directions" on a place page and Navigate on Hao's cards open this tab with ?route=<placeId>&at=<time>.
+  const params = useLocalSearchParams<{ route?: string; at?: string }>();
+  const routeKey = params.route ? `${params.route}:${params.at ?? ''}` : undefined;
   const [handledRoute, setHandledRoute] = useState<string | undefined>();
-  if (params.route && params.route !== handledRoute) {
-    setHandledRoute(params.route);
-    const place = getCachedPlace(params.route);
+  if (routeKey && routeKey !== handledRoute) {
+    setHandledRoute(routeKey);
+    const place = getCachedPlace(params.route!);
     if (place) {
       setSelectedId(place.id);
-      setArea(cityOf(place) ?? (here ? 'nearby' : area));
+      // Directions start from the user, so stay near them when we know where they are.
+      setArea(here || location.status !== 'denied' ? 'nearby' : (cityOf(place) ?? area));
       setCategory('all');
       if (here) setMode(distanceKm(here, place) < 1.5 ? 'foot' : 'car');
     }
   }
 
-  const city = area === 'nearby' ? null : (Cities.find((c) => c.id === area) ?? Cities[0]);
+  // A place opened from elsewhere (Navigate on a Hao card) shows its route card, even if the sheet was minimized.
+  useEffect(() => {
+    if (handledRoute && half) sheetHeight.set(withSpring(half, SPRING));
+  }, [handledRoute, half, sheetHeight]);
+
+  const city = shown === 'nearby' ? null : (Cities.find((c) => c.id === shown) ?? Cities[0]);
 
   // Live from AMap: around the user (closest first) or the city's top places.
   const cat = category === 'all' ? undefined : category;
-  const search = usePlaces(area === 'nearby' ? (here ? { near: here, radius: 5000, category: cat } : null) : { city: city!.nameZh, category: cat });
+  const search = usePlaces(shown === 'nearby' ? (here ? { near: here, radius: 5000, category: cat } : null) : { city: city!.nameZh, category: cat });
   const places = useMemo(
     // Keep the selected place on the map even when it isn't in the current results.
     () => (selectedPlace && !search.places.some((p) => p.id === selectedPlace.id) ? [selectedPlace, ...search.places] : search.places),
@@ -130,10 +143,10 @@ export default function ExploreScreen() {
   );
 
   const center = useMemo(() => {
-    if (area === 'nearby' && here) return { ...here, _r: recenter };
+    if (shown === 'nearby' && anchor) return { ...anchor, _r: recenter };
     const c = city ?? Cities[0];
     return { latitude: c.latitude, longitude: c.longitude, _r: recenter };
-  }, [area, here, city, recenter]);
+  }, [shown, anchor, city, recenter]);
 
   const chooseArea = async (next: Area) => {
     setMenuOpen(false);
@@ -149,10 +162,11 @@ export default function ExploreScreen() {
     if (location.status !== 'granted' && !(await location.request())) return;
     setSelectedId(undefined);
     setArea('nearby');
+    setAnchor(here);
     setRecenter((n) => n + 1);
   };
 
-  const label = area === 'nearby' ? t('Near me') : `${t(city!.name)} ${city!.nameZh}`;
+  const label = shown === 'nearby' ? t('Near me') : `${t(city!.name)} ${city!.nameZh}`;
 
   return (
     <View style={styles.container} onLayout={onLayout}>
@@ -160,7 +174,8 @@ export default function ExploreScreen() {
         <PlaceMap
           places={places}
           center={center}
-          delta={area === 'nearby' ? 0.12 : 0.25}
+          // Street level around the user (about zoom 15), a whole city otherwise.
+          delta={shown === 'nearby' ? 0.015 : 0.25}
           userLocation={here}
           route={activeRoute}
           bottomInset={half}
@@ -181,8 +196,8 @@ export default function ExploreScreen() {
             accessibilityState={{ expanded: menuOpen }}
             accessibilityLabel={t('Area: {area}. Change area', { area: label })}
             style={({ pressed }) => [styles.dropdown, menuOpen && styles.dropdownOpen, pressed && { opacity: 0.9 }]}>
-            <View style={[styles.dropdownIcon, area === 'nearby' && { backgroundColor: '#E8F0FF' }]}>
-              <Ionicons name={area === 'nearby' ? 'navigate' : 'location'} size={16} color={area === 'nearby' ? '#2576FF' : Colors.red} />
+            <View style={[styles.dropdownIcon, shown === 'nearby' && { backgroundColor: Colors.blueSoft }]}>
+              <Ionicons name={shown === 'nearby' ? 'navigate' : 'location'} size={16} color={shown === 'nearby' ? '#2576FF' : Colors.red} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.dropdownLabel}>{t('Exploring')}</Text>
@@ -198,7 +213,7 @@ export default function ExploreScreen() {
               <MenuRow
                 icon="navigate"
                 iconColor="#2576FF"
-                iconBg="#E8F0FF"
+                iconBg={Colors.blueSoft}
                 title={t('Near me')}
                 subtitle={
                   location.status === 'denied'
@@ -207,7 +222,7 @@ export default function ExploreScreen() {
                       ? t('All places, closest first')
                       : t('Use my current location')
                 }
-                selected={area === 'nearby'}
+                selected={shown === 'nearby'}
                 onPress={() =>
                   location.status === 'denied' && !location.canAskAgain ? location.openSettings() : chooseArea('nearby')
                 }
@@ -221,7 +236,7 @@ export default function ExploreScreen() {
                   iconBg={Colors.redSoft}
                   title={`${t(c.name)}  ${c.nameZh}`}
                   subtitle={here ? t('{distance} away', { distance: formatDistance(distanceKm(here, c)) }) : t('Top places on AMap')}
-                  selected={area === c.id}
+                  selected={shown === c.id}
                   onPress={() => chooseArea(c.id)}
                 />
               ))}
@@ -240,19 +255,39 @@ export default function ExploreScreen() {
           {location.status === 'loading' ? (
             <ActivityIndicator size="small" color="#2576FF" />
           ) : (
-            <Ionicons name={area === 'nearby' && here ? 'locate' : 'locate-outline'} size={22} color="#2576FF" />
+            <Ionicons name={shown === 'nearby' && here ? 'locate' : 'locate-outline'} size={22} color="#2576FF" />
           )}
         </Pressable>
       </Animated.View>
 
       <Animated.View style={[styles.sheet, sheetStyle]}>
         <GestureDetector gesture={sheetGesture}>
-          <View style={styles.sheetHeader} accessibilityRole="button" accessibilityLabel={t('Show or hide the places list')}>
+          <View
+            style={styles.sheetHeader}
+            accessibilityRole="button"
+            accessibilityLabel={selectedPlace ? t('Show or hide the directions') : t('Show or hide the places list')}>
             <View style={styles.handle} />
-            {selectedPlace ? null : (
+            {selectedPlace ? (
+              // The selected place's title drags and taps like the list's, so the route card can be
+              // minimized to see the map; the X (outside the gesture, below) clears the selection.
+              <View style={[styles.sheetTitleRow, { paddingRight: Spacing.md + 44 }]}>
+                <PlaceThumb place={selectedPlace} size={40} radius={10} />
+                <View style={{ flex: 1, marginLeft: Spacing.sm }}>
+                  <Text style={styles.sheetTitle} numberOfLines={1}>
+                    {selectedPlace.name}
+                  </Text>
+                  <Text style={styles.sheetSub} numberOfLines={1}>
+                    {activeRoute ? `${formatDuration(activeRoute.durationS)} · ${formatMeters(activeRoute.distanceM)}` : selectedPlace.nameZh}
+                  </Text>
+                </View>
+                <Animated.View style={[styles.sheetToggle, chevronStyle]}>
+                  <Ionicons name="chevron-up" size={18} color={Colors.ink} />
+                </Animated.View>
+              </View>
+            ) : (
               <View style={styles.sheetTitleRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.sheetTitle}>{area === 'nearby' ? t('Places near you') : t('Places in {city}', { city: t(city!.name) })}</Text>
+                  <Text style={styles.sheetTitle}>{shown === 'nearby' ? t('Places near you') : t('Places in {city}', { city: t(city!.name) })}</Text>
                   <Text style={styles.sheetSub}>
                     {search.loading ? t('Searching AMap…') : places.length === 1 ? t('1 place') : t('{count} places', { count: places.length })}
                     {category !== 'all' ? ` · ${t(CategoryMeta[category].label)}` : ''}
@@ -266,14 +301,22 @@ export default function ExploreScreen() {
           </View>
         </GestureDetector>
         {selectedPlace ? (
+          <Pressable onPress={() => setSelectedId(undefined)} hitSlop={10} style={styles.sheetClose} accessibilityLabel={t('Close directions')}>
+            <Ionicons name="close" size={18} color={Colors.ink} />
+          </Pressable>
+        ) : null}
+        {selectedPlace ? (
+          <Animated.View style={contentStyle}>
           <RouteCard
             place={selectedPlace}
+            showHeader={false}
             location={location}
             routes={directions.routes}
             mode={mode}
             onModeChange={setMode}
             onClose={() => setSelectedId(undefined)}
           />
+          </Animated.View>
         ) : (
           <Animated.View style={contentStyle}>
             <View style={styles.catTiles}>
@@ -281,7 +324,9 @@ export default function ExploreScreen() {
             </View>
 
             {location.status === 'denied' && area === 'nearby' ? (
-              <Text style={styles.notice}>{t('Location access is off, so places can’t be sorted by distance.')}</Text>
+              <Pressable onPress={location.canAskAgain ? location.request : location.openSettings}>
+                <Text style={styles.notice}>{t('Location is off, so you’re seeing Beijing. Tap to turn it on for places near you.')}</Text>
+              </Pressable>
             ) : null}
 
             <ScrollView contentContainerStyle={styles.list}>
@@ -375,7 +420,7 @@ function MenuRow({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.paper },
   overlay: { position: 'absolute', top: 0, left: 0, right: 0 },
   scrim: { flex: 1, backgroundColor: 'rgba(27,26,31,0.25)' },
@@ -447,6 +492,19 @@ const styles = StyleSheet.create({
   },
   sheetTitleRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingTop: Spacing.sm },
   sheetTitle: { fontSize: 18, fontWeight: '800', color: Colors.ink },
+  sheetClose: {
+    position: 'absolute',
+    top: 23, // centred on the title row: handle (8 + 5) + row padding (8) + half the 40 px row − 18
+    right: Spacing.md,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sheetSub: { fontSize: 13, color: Colors.muted, marginTop: 1 },
   sheetToggle: {
     width: 36,
@@ -458,7 +516,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  catTiles: { paddingHorizontal: Spacing.md, paddingBottom: Spacing.md },
+  catTiles: { paddingBottom: Spacing.md },
   notice: { fontSize: 13, color: Colors.inkSoft, paddingHorizontal: Spacing.md, marginBottom: Spacing.sm },
   list: { paddingHorizontal: Spacing.md, paddingBottom: Spacing.lg, gap: Spacing.sm },
   empty: { textAlign: 'center', color: Colors.muted, marginTop: Spacing.lg },
@@ -477,7 +535,7 @@ const styles = StyleSheet.create({
   placeZh: { fontSize: 13, color: Colors.inkSoft },
   metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 4 },
   meta: { fontSize: 12, color: Colors.muted },
-  distance: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: '#E8F0FF', paddingHorizontal: 6, paddingVertical: 1, borderRadius: Radius.pill, marginLeft: 2 },
+  distance: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: Colors.blueSoft, paddingHorizontal: 6, paddingVertical: 1, borderRadius: Radius.pill, marginLeft: 2 },
   distanceText: { fontSize: 11, fontWeight: '700', color: '#2576FF' },
   go: {
     width: 32,
@@ -487,4 +545,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-});
+}));

@@ -12,6 +12,7 @@
     "expo-asset": "~58.0.18",
     "expo-audio": "~58.0.10",
     "expo-camera": "~58.0.12",
+    "expo-clipboard": "~58.0.4",
     "expo-constants": "~58.0.13",
     "expo-crypto": "~58.0.7",
     "expo-device": "~58.0.5",
@@ -62,7 +63,15 @@
     "db:types": "npx supabase gen types typescript --local > src/lib/database.types.ts",
     "kb:build": "node scripts/build-knowledge.mjs",
     "i18n:build": "node scripts/build-i18n.mjs",
-    "map:build": "node scripts/build-map-assets.mjs"
+    "map:build": "node scripts/build-map-assets.mjs",
+    "db:test": "npx supabase test db",
+    "test:ranking": "node --test \"shared/places/*.test.ts\"",
+    "test:twin": "node --test \"shared/ai/twin.test.ts\"",
+    "test:stories": "node --test \"shared/stories/*.test.ts\"",
+    "seed:places": "node scripts/seed-places.mjs",
+    "stories:facts": "node --no-warnings scripts/build-story-facts.mjs",
+    "seed:stories": "node scripts/seed-stories.mjs",
+    "demo:ranking": "node scripts/demo-ranking.mjs"
   },
   "private": true
 }

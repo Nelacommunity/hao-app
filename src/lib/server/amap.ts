@@ -58,6 +58,7 @@ function toPlace(poi: AmapPoi, en?: AmapPoi): Place {
     .slice(0, 8);
   const enName = en ? text(en.name) : '';
   const enAddress = en ? text(en.address) : '';
+  const lastType = (poi: AmapPoi) => text(poi.type).split('|')[0].split(';').pop() ?? '';
   return {
     id: poi.id,
     name: enName || poi.name,
@@ -67,7 +68,8 @@ function toPlace(poi: AmapPoi, en?: AmapPoi): Place {
     cityZh: text(poi.cityname),
     districtZh: text(poi.adname),
     category: categoryOf(text(poi.typecode)),
-    typeZh: text(poi.type).split('|')[0].split(';').pop() ?? '',
+    typeZh: lastType(poi),
+    type: (en && lastType(en)) || lastType(poi),
     latitude,
     longitude,
     rating: rating > 0 ? rating : undefined,
@@ -88,7 +90,7 @@ function toPlace(poi: AmapPoi, en?: AmapPoi): Place {
 async function query(path: string, params: Record<string, string | undefined>) {
   const [zh, en] = await Promise.all([
     amap<{ pois?: AmapPoi[] }>(path, { ...params, show_fields: 'business,photos' }),
-    amap<{ pois?: AmapPoi[] }>(path, { ...params, langCode: 'en' }).catch(() => null),
+    amap<{ pois?: AmapPoi[] }>(path, { ...params, language: 'en' }).catch(() => null),
   ]);
   const english = new Map((en?.pois ?? []).map((p) => [p.id, p]));
   return (zh.pois ?? []).filter((p) => p.location).map((p) => toPlace(p, english.get(p.id)));
@@ -156,4 +158,15 @@ export async function route(mode: RouteMode, from: { lat: number; lng: number },
     distanceM: Number(text(path.distance)) || 0,
     durationS: Number(text(path.cost?.duration)) || stepSeconds,
   };
+}
+
+// ─── Where the user is ───────────────────────────────────────────────────────
+
+/** The city (in Chinese) at a GCJ-02 point; municipalities like 北京市 are their own city. Null outside China. */
+export async function cityAt(lat: number, lng: number): Promise<string | null> {
+  type Component = { province?: Text; city?: Text; country?: Text };
+  const data = await amap<{ regeocode?: { addressComponent?: Component } }>('/v3/geocode/regeo', { location: lngLat(lat, lng) });
+  const c = data.regeocode?.addressComponent;
+  // AMap sends an empty array for the city of a municipality, and nothing useful outside China.
+  return text(c?.city) || text(c?.province) || null;
 }

@@ -6,7 +6,7 @@ import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, Vi
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SpeakButton } from '@/components/speak-button';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Colors, Radius, Shadow, Spacing, themed } from '@/constants/theme';
 import { CategoryMeta } from '@/data/places';
 import { usePlace } from '@/lib/places';
 import { isPlaceSaved, setPlaceSaved } from '@/lib/saved-places';
@@ -73,7 +73,7 @@ export default function PlaceScreen() {
           {place.photos[0] ? (
             <Image source={{ uri: place.photos[0] }} style={StyleSheet.absoluteFill} contentFit="cover" transition={250} />
           ) : (
-            <Text style={styles.heroEmoji}>{meta.emoji}</Text>
+            <Ionicons name={meta.icon} size={64} color={meta.color} />
           )}
           <Pressable onPress={() => router.back()} style={styles.close} accessibilityLabel={t('Close')}>
             <Ionicons name="close" size={22} color={Colors.ink} />
@@ -91,7 +91,7 @@ export default function PlaceScreen() {
         <View style={styles.body}>
           <Text style={[styles.category, { color: meta.color }]}>
             {t(meta.label)}
-            {place.typeZh ? ` · ${place.typeZh}` : ''}
+            {place.type || place.typeZh ? ` · ${place.type || place.typeZh}` : ''}
           </Text>
           <Text style={styles.name}>{place.name}</Text>
           <View style={styles.zhRow}>
@@ -176,13 +176,12 @@ function Fact({ icon, label, value }: { icon: React.ComponentProps<typeof Ionico
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.paper },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
   missing: { fontSize: 18, fontWeight: '700', color: Colors.ink },
   link: { color: Colors.red, fontWeight: '700' },
   hero: { height: 240, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  heroEmoji: { fontSize: 110 },
   close: {
     position: 'absolute',
     top: Spacing.md,
@@ -247,7 +246,7 @@ const styles = StyleSheet.create({
   taxi: { marginTop: 0, backgroundColor: Colors.redSoft },
   driver: {
     flex: 1,
-    backgroundColor: Colors.ink,
+    backgroundColor: Colors.strong,
     padding: Spacing.lg,
     justifyContent: 'center',
   },
@@ -255,4 +254,4 @@ const styles = StyleSheet.create({
   driverName: { fontSize: 48, color: '#fff', fontWeight: '900', marginTop: Spacing.md },
   driverAddress: { fontSize: 26, color: '#fff', fontWeight: '600', marginTop: Spacing.md, lineHeight: 36 },
   driverHint: { fontSize: 14, color: Colors.muted, marginTop: Spacing.xl },
-});
+}));

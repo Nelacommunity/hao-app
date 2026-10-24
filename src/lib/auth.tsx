@@ -14,9 +14,16 @@ type AuthContextValue = {
   resettingPassword: boolean;
   setResettingPassword: (value: boolean) => void;
   updateProfile: (
-    changes: Partial<Pick<Profile, 'display_name' | 'language_code' | 'language_name' | 'preferences' | 'memory_enabled'>>
+    changes: Partial<
+      Pick<
+        Profile,
+        'display_name' | 'language_code' | 'language_name' | 'preferences' | 'memory_enabled' | 'nationality' | 'home_city' | 'university' | 'city' | 'share_visits' | 'traveller_type' | 'loves' | 'wants' | 'twin_completed_at'
+      >
+    >
   ) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Reloads the profile after the server changed it (e.g. the twin chat). */
+  refreshProfile: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -70,6 +77,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [userId]
   );
 
+  const refreshProfile = useCallback(async () => {
+    if (!userId) return;
+    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
+    if (data) setProfile(data);
+  }, [userId]);
+
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setProfile(null);
@@ -84,8 +97,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setResettingPassword,
       updateProfile,
       signOut,
+      refreshProfile,
     }),
-    [session, profile, loading, resettingPassword, updateProfile, signOut]
+    [session, profile, loading, resettingPassword, updateProfile, signOut, refreshProfile]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

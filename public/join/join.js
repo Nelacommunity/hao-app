@@ -82,6 +82,7 @@
   function connect(params, handlers) {
     var p = params();
     var myLang = p.lang ? { code: p.lang, name: p.langName } : undefined;
+    var myName = p.name || undefined;
     var stopped = false;
     var hostHere = false;
     var expiryTimer = null;
@@ -96,10 +97,10 @@
       return false;
     }
     function sendRaw(msg) {
-      channel.send({ type: 'broadcast', event: 'cli', payload: { from: p.pid, role: p.role, language: myLang, msg: msg } });
+      channel.send({ type: 'broadcast', event: 'cli', payload: { from: p.pid, role: p.role, language: myLang, name: myName, msg: msg } });
     }
     function track() {
-      channel.track({ pid: p.pid, role: p.role, language: myLang, at: Date.now() });
+      channel.track({ pid: p.pid, role: p.role, language: myLang, name: myName, at: Date.now() });
     }
 
     channel.on('broadcast', { event: 'srv' }, function (event) {
@@ -111,15 +112,19 @@
     });
     channel.on('presence', { event: 'sync' }, function () {
       var state = channel.presenceState();
+      var hostName = '';
       var host = Object.keys(state).some(function (k) {
-        return state[k].some(function (m) { return m.role === 'host'; });
+        return state[k].some(function (m) {
+          if (m.role === 'host' && m.name) hostName = String(m.name).slice(0, 24);
+          return m.role === 'host';
+        });
       });
       if (host && !hostHere) {
         clearTimeout(expiryTimer);
         sendRaw({ t: 'hello' }); // (re)introduce ourselves whenever the host (re)appears
       }
       hostHere = host;
-      if (!stopped) handlers.onStatus(host);
+      if (!stopped) handlers.onStatus(host, hostName);
     });
     channel.subscribe(function (status) {
       if (status === 'SUBSCRIBED') {
@@ -228,6 +233,7 @@
       https: '此链接不是安全连接（HTTPS），浏览器不允许使用麦克风。请让对方使用 HTTPS 链接。', retry: '重试',
       connected: '已连接', reconnecting: '重新连接中…', ended: '对话已结束', thanks: '谢谢您的帮助！', full: '这个二维码已被另一部手机使用。',
       fullTitle: '对话已有人加入', empty: '点击下面的圆圈，然后说话。', you: '您', hao: 'Hao',
+      nameLabel: '您的称呼', namePlaceholder: '例如：王师傅、李老师', nameHint: '对方会看到这个名字，方便知道是谁说的。', withHost: '正在与 {name} 对话',
     },
     en: {
       choose: 'Choose your language', hello: 'Hello!', intro: 'A traveller would like to talk with you. Hao will interpret in real time.',
@@ -239,8 +245,14 @@
       connected: 'Connected', reconnecting: 'Reconnecting…', ended: 'The conversation has ended', thanks: 'Thank you!',
       full: 'This QR code is already being used on another phone.', fullTitle: 'Someone already joined', empty: 'Tap the circle below and speak.',
       you: 'You', hao: 'Hao',
+      nameLabel: 'Your name', namePlaceholder: 'e.g. Li Wei', nameHint: 'They will see this name, so the chat shows who said what.', withHost: 'Talking with {name}',
     },
   };
+
+  /** A display name from what the person typed: one line, short. */
+  function cleanName(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 24);
+  }
 
   function startConversation() {
     var saved = store('hao:conv-lang:' + roomId);
@@ -261,13 +273,31 @@
   function showJoin(lang) {
     var s = CONV_TEXT[lang.ui];
     document.documentElement.lang = lang.speech;
+    // Their name labels their messages on the traveller's phone (and in the saved conversation).
+    var nameInput = el('input', {
+      class: 'name-input', maxlength: '24', autocomplete: 'nickname', placeholder: s.namePlaceholder, 'aria-label': s.nameLabel,
+    });
+    nameInput.value = store('hao:guest-name') || '';
+    var joinBtn = el('button', { class: 'btn', text: s.join, onclick: function () {
+      var name = cleanName(nameInput.value);
+      if (!name) return nameInput.focus();
+      store('hao:guest-name', name);
+      join(lang, s, name);
+    } });
+    function sync() { joinBtn.disabled = !cleanName(nameInput.value); }
+    nameInput.addEventListener('input', sync);
+    nameInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') joinBtn.click(); });
+    sync();
     render([
       el('h1', { text: s.hello }),
       el('p', { class: 'lead', text: s.intro }),
+      el('label', { class: 'name-label', text: s.nameLabel }),
+      nameInput,
+      el('p', { class: 'name-hint', text: s.nameHint }),
       el('div', { class: 'consent' }, [s.consent]),
       el('div', { class: 'spacer' }),
       el('button', { class: 'btn secondary', text: lang.native + ' ▾', onclick: function () { store('hao:conv-lang:' + roomId, ''); startConversation(); } }),
-      el('button', { class: 'btn', text: s.join, onclick: function () { join(lang, s); } }),
+      joinBtn,
     ]);
   }
 
@@ -286,27 +316,27 @@
     unlockSpeech();
   }
 
-  function join(lang, s) {
+  function join(lang, s, name) {
     unlockAudio();
     if (!window.isSecureContext || !navigator.mediaDevices || !window.MediaRecorder) return micError(s, s.https, false, lang);
     navigator.mediaDevices
       .getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
-      .then(function (stream) { runConversation(stream, lang, s); })
-      .catch(function () { micError(s, s.micDenied, true, lang); });
+      .then(function (stream) { runConversation(stream, lang, s, name); })
+      .catch(function () { micError(s, s.micDenied, true, lang, name); });
   }
 
-  function micError(s, text, canRetry, lang) {
+  function micError(s, text, canRetry, lang, name) {
     render([
       el('div', { class: 'center' }, [
         el('div', { class: 'big-icon', text: '🎙️' }),
         el('h1', { text: s.micTitle }),
         el('p', { class: 'lead', text: text }),
-        canRetry ? el('button', { class: 'btn', text: s.retry, onclick: function () { join(lang, s); } }) : null,
+        canRetry ? el('button', { class: 'btn', text: s.retry, onclick: function () { join(lang, s, name); } }) : null,
       ]),
     ]);
   }
 
-  function runConversation(stream, lang, s) {
+  function runConversation(stream, lang, s, name) {
     var captions = [];
     var phase = { phase: 'idle', by: null };
     var recording = false;
@@ -316,14 +346,15 @@
     var levelRing = el('span', { class: 'ring' });
     var circle = el('button', { class: 'voice-circle', type: 'button', 'aria-label': s.tap }, [levelRing, el('span', { class: 'mic-icon', text: '🎙️' })]);
 
-    render([listEl, el('div', { class: 'circle-wrap' }, [circle, statusLine])]);
+    var withEl = el('p', { class: 'with-host', hidden: true });
+    render([withEl, listEl, el('div', { class: 'circle-wrap' }, [circle, statusLine])]);
 
     function drawCaptions() {
       listEl.replaceChildren.apply(listEl, captions.length
         ? captions.map(function (c) {
             var mine = c.speaker === 'LOCAL';
             return el('div', { class: 'cap ' + (mine ? 'cap-me' : 'cap-hao') }, [
-              el('small', { text: mine ? s.you : s.hao }),
+              el('small', { text: mine ? (name || s.you) : s.hao }),
               el('p', { text: c.text }),
             ]);
           })
@@ -446,9 +477,15 @@
     });
 
     var conn = connect(
-      function () { return { room: roomId, role: 'local', pid: participantId(), lang: lang.code, langName: lang.name }; },
+      function () { return { room: roomId, role: 'local', pid: participantId(), lang: lang.code, langName: lang.name, name: name }; },
       {
-        onStatus: function (online) { setStatus(online ? s.connected : s.reconnecting, !online); },
+        onStatus: function (online, hostName) {
+          setStatus(online ? s.connected : s.reconnecting, !online);
+          if (hostName) {
+            withEl.textContent = s.withHost.replace('{name}', hostName);
+            withEl.hidden = false;
+          }
+        },
         onMessage: function (msg) {
           if (msg.t === 'welcome' && msg.snapshot.kind === 'conversation_local') {
             captions = msg.snapshot.captions;

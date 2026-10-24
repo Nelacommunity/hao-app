@@ -8,21 +8,23 @@ import {
   ScrollView,
   type ScrollViewInstance,
   StyleSheet,
+  Switch,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing, themed } from '@/constants/theme';
 import { LanguagePicker } from '@/components/language-picker';
 import { setTravellerLanguage, useTravellerLanguage } from '@/lib/language-store';
 import { Languages, PopularLanguages } from '@/lib/languages';
 import { tx, useT } from '@/lib/i18n';
+import { setOnboardingChoices, useOnboardingChoices } from '@/lib/onboarding-choices';
 
-const SLIDES = [
+const SLIDES = themed(() => [
   {
-    emoji: '🗣️',
+    icon: 'chatbubbles' as const,
     zh: '说',
     color: Colors.red,
     soft: Colors.redSoft,
@@ -30,7 +32,7 @@ const SLIDES = [
     body: tx('Real-time translation for menus, taxis and new friends. Tap the mic and speak naturally.'),
   },
   {
-    emoji: '🗺️',
+    icon: 'map' as const,
     zh: '游',
     color: Colors.jade,
     soft: Colors.jadeSoft,
@@ -38,14 +40,14 @@ const SLIDES = [
     body: tx('Curated landmarks, temples and markets on the map — with opening hours and local tips.'),
   },
   {
-    emoji: '🥟',
+    icon: 'restaurant' as const,
     zh: '吃',
     color: '#E08A1E',
     soft: Colors.goldSoft,
     title: tx('Find amazing food'),
     body: tx('Dish suggestions that fit your taste, spice tolerance and diet, with phrases to order.'),
   },
-];
+]);
 
 export default function OnboardingScreen() {
   const t = useT();
@@ -54,11 +56,13 @@ export default function OnboardingScreen() {
   const [index, setIndex] = useState(0);
   const language = useTravellerLanguage();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const choices = useOnboardingChoices();
   // Keep the chosen language visible even when it isn't one of the quick picks.
   const quickPicks = PopularLanguages.slice(0, 6).some((l) => l.code === language.code)
     ? PopularLanguages.slice(0, 6)
     : [language, ...PopularLanguages.slice(0, 5)];
-  const total = SLIDES.length + 1;
+  // The feature slides, "Hao remembers your places", then the language.
+  const total = SLIDES.length + 2;
   const isLast = index === total - 1;
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -95,12 +99,32 @@ export default function OnboardingScreen() {
           <View key={s.title} style={[styles.slide, { width }]}>
             <View style={[styles.art, { backgroundColor: s.soft }]}>
               <Text style={[styles.artZh, { color: s.color }]}>{s.zh}</Text>
-              <Text style={styles.artEmoji}>{s.emoji}</Text>
+              <Ionicons name={s.icon} size={96} color={s.color} style={styles.artIcon} />
             </View>
             <Text style={styles.title}>{t(s.title)}</Text>
             <Text style={styles.body}>{t(s.body)}</Text>
           </View>
         ))}
+
+        <View style={[styles.slide, { width }]}>
+          <View style={[styles.art, { backgroundColor: Colors.jadeSoft }]}>
+            <Text style={[styles.artZh, { color: Colors.jade }]}>记</Text>
+            <Ionicons name="bookmark" size={96} color={Colors.jade} style={styles.artIcon} />
+          </View>
+          <Text style={styles.title}>{t('Hao remembers your places')}</Text>
+          <Text style={styles.body}>{t('Places you visit become your own My Places and My Food. Suggestions are ranked by what people from your country loved.')}</Text>
+          <View style={styles.share}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.shareTitle}>{t('Share my visits anonymously to help people from my country')}</Text>
+              <Text style={styles.shareBody}>{t('Only totals, only from groups of 5 or more. Change it any time in Me.')}</Text>
+            </View>
+            <Switch
+              value={choices.shareVisits}
+              onValueChange={(shareVisits) => setOnboardingChoices({ shareVisits })}
+              trackColor={{ true: Colors.jade, false: Colors.line }}
+            />
+          </View>
+        </View>
 
         <View style={[styles.slide, { width }]}>
           <Text style={styles.title}>{t('What do you speak?')}</Text>
@@ -155,7 +179,7 @@ export default function OnboardingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.paper },
   topBar: {
     flexDirection: 'row',
@@ -178,7 +202,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xl,
   },
   artZh: { position: 'absolute', fontSize: 220, fontWeight: '900', opacity: 0.15 },
-  artEmoji: { fontSize: 110 },
+  artIcon: { opacity: 0.95 },
   title: { fontSize: 30, fontWeight: '800', color: Colors.ink, letterSpacing: -0.5 },
   body: { fontSize: 16, lineHeight: 24, color: Colors.inkSoft, marginTop: Spacing.sm },
   langGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginTop: Spacing.lg },
@@ -208,6 +232,19 @@ const styles = StyleSheet.create({
     borderColor: Colors.line,
   },
   moreText: { flex: 1, fontSize: 15, fontWeight: '700', color: Colors.ink },
+  share: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.line,
+  },
+  shareTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink },
+  shareBody: { fontSize: 13, lineHeight: 18, color: Colors.inkSoft, marginTop: 2 },
   bottom: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -228,4 +265,4 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
   },
   nextText: { color: '#fff', fontSize: 16, fontWeight: '800' },
-});
+}));

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, type TextInputInstance, View } from 'react-native';
 
 import { AuthScreen, FormMessage, OnRed, PrimaryButton, TextLink } from '@/components/auth-ui';
-import { Colors, Radius } from '@/constants/theme';
+import { Colors, Radius, themed } from '@/constants/theme';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { useT } from '@/lib/i18n';
@@ -107,7 +107,7 @@ export default function VerifyScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   boxes: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
   box: {
     flex: 1,
@@ -126,4 +126,4 @@ const styles = StyleSheet.create({
   hiddenInput: { position: 'absolute', width: '100%', height: '100%', opacity: 0 },
   resend: { alignItems: 'center', marginTop: 4 },
   resendText: { fontSize: 14, color: OnRed.faint },
-});
+}));

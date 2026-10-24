@@ -1,48 +1,54 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Link, router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LanguagePicker } from '@/components/language-picker';
 import { PlaceThumb } from '@/components/place-thumb';
-import { PreferencesEditor } from '@/components/preferences-editor';
 import { ScreenHeader } from '@/components/screen-header';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Colors, Radius, setThemePreference, Shadow, Spacing, themed, type ThemePreference, useThemePreference } from '@/constants/theme';
 import type { Place } from '@/data/places';
 import { useAuth, useLanguagePreference } from '@/lib/auth';
 import { countMemories } from '@/lib/memory';
 import { fetchPlacesById } from '@/lib/places';
 import { fetchSavedPlaceIds } from '@/lib/saved-places';
 import { supabase } from '@/lib/supabase';
-import { DefaultPreferences, parsePreferences } from '@shared/ai/preferences';
-import type { Preferences } from '@shared/ai/types';
-import { useT } from '@/lib/i18n';
+import { twinDna, twinFromRow } from '@shared/ai/twin';
+import { tx, useT } from '@/lib/i18n';
+import { countryName } from '@/lib/place-actions';
+import { countVisits, deleteVisitHistory } from '@/lib/visits';
+
+const APPEARANCES: { value: ThemePreference; label: string; icon: 'phone-portrait-outline' | 'sunny' | 'moon' }[] = [
+  { value: 'system', label: tx('Same as phone'), icon: 'phone-portrait-outline' },
+  { value: 'light', label: tx('Light'), icon: 'sunny' },
+  { value: 'dark', label: tx('Dark'), icon: 'moon' },
+];
 
 export default function ProfileScreen() {
   const t = useT();
   const { session, profile, updateProfile, signOut } = useAuth();
   const [language, setLanguage] = useLanguagePreference();
+  const appearance = useThemePreference();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [saved, setSaved] = useState<Place[] | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [memoryCount, setMemoryCount] = useState<number | null>(null);
+  const [visitCount, setVisitCount] = useState<number | null>(null);
 
   const email = session?.user.email ?? '';
   const name = profile?.display_name || email.split('@')[0] || t('Traveller');
   const initials = name.slice(0, 1).toUpperCase();
-  const [prefsDraft, setPrefsDraft] = useState<Preferences | null>(null);
-  const preferences = prefsDraft ?? parsePreferences(profile?.preferences) ?? DefaultPreferences;
-
-  const savePreferences = (next: Preferences) => {
-    setPrefsDraft(next);
-    updateProfile({ preferences: next }).catch(() => {});
-  };
+  // The digital twin as plain text: everything Hao uses to pick food and places for this user.
+  const dna = profile
+    ? twinDna(twinFromRow(profile), { countryName })
+    : '';
 
   useFocusEffect(
     useCallback(() => {
       countMemories().then(setMemoryCount).catch(() => setMemoryCount(null));
+      countVisits().then(setVisitCount).catch(() => setVisitCount(null));
       fetchSavedPlaceIds()
         .then(fetchPlacesById)
         .then(setSaved)
@@ -56,6 +62,20 @@ export default function ProfileScreen() {
     if (next !== undefined && next !== (profile?.display_name ?? '')) {
       await updateProfile({ display_name: next || null }).catch(() => {});
     }
+  };
+
+  const confirmDeleteVisits = () => {
+    Alert.alert(t('Delete my visit history?'), t('Every place Hao remembers you visited, with your ratings, notes and photos, is deleted and removed from community stats.'), [
+      { text: t('Cancel'), style: 'cancel' },
+      {
+        text: t('Delete'),
+        style: 'destructive',
+        onPress: () =>
+          deleteVisitHistory()
+            .then(() => setVisitCount(0))
+            .catch((e: Error) => Alert.alert(t('Something went wrong'), e.message)),
+      },
+    ]);
   };
 
   const confirmDelete = () => {
@@ -133,19 +153,70 @@ export default function ProfileScreen() {
             </Text>
             <Ionicons name="chevron-forward" size={16} color={Colors.muted} />
           </Pressable>
+          <View style={[styles.row, styles.rowDivider]}>
+            <View style={[styles.rowIcon, { backgroundColor: Colors.paper }]}>
+              <Ionicons name="contrast" size={18} color={Colors.ink} />
+            </View>
+            <Text style={styles.rowLabel}>{t('Appearance')}</Text>
+            <View style={styles.appearance} accessibilityRole="radiogroup">
+              {APPEARANCES.map((a) => {
+                const on = appearance === a.value;
+                return (
+                  <Pressable
+                    key={a.value}
+                    onPress={() => setThemePreference(a.value)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: on }}
+                    accessibilityLabel={t(a.label)}
+                    style={[styles.appearanceOption, on && styles.appearanceOn]}>
+                    <Ionicons name={a.icon} size={15} color={on ? '#fff' : Colors.inkSoft} />
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
         </View>
 
-        <Text style={styles.sectionTitle}>{t('Food preferences')}</Text>
+        {profile?.is_admin ? (
+          <>
+            <Text style={styles.sectionTitle}>{t('Hao team')}</Text>
+            <View style={styles.card}>
+              <Pressable onPress={() => router.push('/admin-stories')} style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}>
+                <View style={[styles.rowIcon, { backgroundColor: Colors.goldSoft }]}>
+                  <Ionicons name="checkmark-done" size={18} color={Colors.goldText} />
+                </View>
+                <Text style={styles.rowLabel}>{t('Review Discover stories')}</Text>
+                <Ionicons name="chevron-forward" size={16} color={Colors.muted} />
+              </Pressable>
+            </View>
+          </>
+        ) : null}
+
+        <Text style={styles.sectionTitle}>{t('Your Hao DNA')}</Text>
         <View style={styles.card}>
-          <Text style={styles.prefIntro}>{t('Hao applies these automatically when it orders or asks for you.')}</Text>
-          <PreferencesEditor value={preferences} onChange={savePreferences} />
+          <Text style={styles.prefIntro}>
+            {t('What Hao knows about you. Your city follows your location; everything else you tell Hao in chat.')}
+          </Text>
+          <Text style={styles.dna} selectable accessibilityLabel={dna.replace(/\n/g, '. ')}>
+            {dna}
+          </Text>
+          <Pressable onPress={() => router.push('/twin')} style={({ pressed }) => [styles.row, styles.rowDivider, pressed && { opacity: 0.7 }]} accessibilityRole="button">
+            <View style={[styles.rowIcon, { backgroundColor: Colors.redSoft }]}>
+              <Ionicons name="chatbubbles" size={18} color={Colors.red} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowLabel}>{t('Talk to Hao to change it')}</Text>
+              <Text style={styles.rowSub}>{t('e.g. “I’m vegetarian now” or “I love night markets”')}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={Colors.muted} />
+          </Pressable>
         </View>
 
         <Text style={styles.sectionTitle}>{t('Hao’s memory')}</Text>
         <View style={styles.card}>
           <Pressable onPress={() => router.push('/memories')} style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}>
             <View style={[styles.rowIcon, { backgroundColor: Colors.goldSoft }]}>
-              <Ionicons name="sparkles" size={18} color="#A26A00" />
+              <Ionicons name="sparkles" size={18} color={Colors.goldText} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.rowLabel}>{t('What Hao remembers')}</Text>
@@ -160,6 +231,47 @@ export default function ProfileScreen() {
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={Colors.muted} />
+          </Pressable>
+        </View>
+
+        <Text style={styles.sectionTitle}>{t('Places memory')}</Text>
+        <View style={styles.card}>
+          <Pressable onPress={() => router.navigate('/my-places')} style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}>
+            <View style={[styles.rowIcon, { backgroundColor: Colors.jadeSoft }]}>
+              <Ionicons name="footsteps" size={18} color={Colors.jade} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowLabel}>{t('My Places')}</Text>
+              <Text style={styles.rowSub}>
+                {visitCount ? t('{count} places visited · only you can see them', { count: visitCount }) : t('Built automatically as you go')}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={Colors.muted} />
+          </Pressable>
+
+          <View style={[styles.row, styles.rowDivider, { alignItems: 'flex-start' }]}>
+            <View style={[styles.rowIcon, { backgroundColor: Colors.goldSoft }]}>
+              <Ionicons name="people" size={18} color={Colors.goldText} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowLabel}>{t('Share my visits anonymously to help people from my country')}</Text>
+              <Text style={styles.rowSub}>
+                {t('Only totals are shown, and only when at least 5 people from a country went. Never your name or history.')}
+              </Text>
+            </View>
+            <Switch
+              value={!!profile?.share_visits}
+              onValueChange={(share_visits) => updateProfile({ share_visits }).catch(() => {})}
+              trackColor={{ true: Colors.jade, false: Colors.line }}
+              accessibilityLabel={t('Share my visits anonymously')}
+            />
+          </View>
+
+          <Pressable onPress={confirmDeleteVisits} style={({ pressed }) => [styles.row, styles.rowDivider, pressed && { opacity: 0.7 }]}>
+            <View style={[styles.rowIcon, { backgroundColor: Colors.redSoft }]}>
+              <Ionicons name="trash-outline" size={18} color={Colors.redDark} />
+            </View>
+            <Text style={[styles.rowLabel, { color: Colors.redDark }]}>{t('Delete my visit history')}</Text>
           </Pressable>
         </View>
 
@@ -217,7 +329,7 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.paper },
   card: {
     marginHorizontal: Spacing.md,
@@ -237,6 +349,16 @@ const styles = StyleSheet.create({
   },
   avatarText: { fontSize: 24, fontWeight: '900', color: Colors.gold },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  appearance: { flexDirection: 'row', gap: 4, padding: 3, borderRadius: Radius.pill, backgroundColor: Colors.paper, borderWidth: 1, borderColor: Colors.line },
+  appearanceOption: { width: 36, height: 30, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
+  appearanceOn: { backgroundColor: Colors.strong },
+  dna: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: Colors.ink,
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+    paddingVertical: Spacing.sm,
+  },
   name: { fontSize: 20, fontWeight: '800', color: Colors.ink, flexShrink: 1 },
   nameInput: {
     fontSize: 20,
@@ -266,4 +388,4 @@ const styles = StyleSheet.create({
   prefIntro: { fontSize: 13, color: Colors.inkSoft, paddingTop: Spacing.md },
   emptySaved: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.md },
   emptyText: { flex: 1, fontSize: 14, color: Colors.muted },
-});
+}));

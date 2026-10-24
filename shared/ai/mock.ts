@@ -1,5 +1,6 @@
 // Canned responses for testing rooms end-to-end without an API key (AI_PROVIDER=mock).
 import type { AgentProvider, RoomAgentInput, RoomAgentTurn } from './types';
+import { emptyTwinUpdates, twinMissing } from './twin';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -81,6 +82,84 @@ export function mockProvider(): AgentProvider {
         : { answer: 'I don’t remember that yet.', cited_ids: [], new_memories: [] };
     },
 
+    async placesPlan(input) {
+      await wait(250);
+      const text = input.text.toLowerCase();
+      const dna = emptyTwinUpdates();
+      if (/\bi (love|like)\b/.test(text)) dna.loves_add = [input.text.replace(/^.*\bi (love|like)\s+/i, '').slice(0, 60)];
+      if (/\bi want to\b/.test(text)) dna.wants_add = [input.text.replace(/^.*\bi want to\s+/i, '').slice(0, 80)];
+      const base = { query: '', category: '' as const, near: '', filters: [], place_ref: 0, place_name: '', rating: 0, tags: [], scope: '' as const, dna, reply: '', quick_replies: [] };
+      if (/people from my country|where do .* (eat|go)|weekend|holiday/.test(text)) {
+        return { ...base, tool: 'community_picks', category: /hotel/.test(text) ? 'hotel' : /weekend|holiday|trip/.test(text) ? 'attraction' : 'food', scope: /weekend|holiday|trip/.test(text) ? 'anywhere' : 'nearby' };
+      }
+      if (/\b(went|visited|been to|had (lunch|dinner))\b/.test(text)) {
+        const ref = input.shown.length ? input.shown[0].ref : 0;
+        return { ...base, tool: 'log_visit', place_ref: ref, place_name: ref ? '' : input.text, rating: /\b(love|liked|great)\b/.test(text) ? 1 : 0, reply: 'Nice! I’ll remember it.' };
+      }
+      if (/\bmy (places|food)|where have i been\b/.test(text)) return { ...base, tool: 'get_my_places', category: /food/.test(text) ? 'food' : '' };
+      if (/\bsave\b/.test(text) && input.shown.length) return { ...base, tool: 'save_place', place_ref: input.shown[0].ref, reply: 'Saved to Want to go.' };
+      if (/^(hi|hello|thanks|thank you)\b/.test(text)) return { ...base, tool: 'none', reply: 'Hi! Ask me for food or places near you.', quick_replies: ['Food near me'] };
+      const food = /food|eat|restaurant|lunch|dinner|noodle|halal|hungry/.test(text);
+      return {
+        ...base,
+        tool: 'search_places',
+        category: food ? 'food' : 'attraction',
+        filters: /halal/.test(text) ? ['halal'] : [],
+        quick_replies: ['Cheaper options', 'Save the first one'],
+      };
+    },
+
+    async twinTurn(input) {
+      await wait(250);
+      // Scripted: confirm what was detected, then ask for the next missing thing.
+      const updates = emptyTwinUpdates();
+      const said = input.text.toLowerCase();
+      const missing = twinMissing(input.profile);
+      if (missing[0] === 'nationality' && input.detected.nationality && /^(yes|yeah|right|correct)/.test(said)) updates.nationality = input.detected.nationality;
+      if (/student/.test(said)) updates.traveller_type = 'student';
+      if (/tourist/.test(said)) updates.traveller_type = 'tourist';
+      if (/halal/.test(said)) updates.diet_add = ['halal'];
+      if (/vegetarian/.test(said)) updates.diet_add = ['vegetarian'];
+      if (/peanut/.test(said)) updates.allergies_add = ['peanuts'];
+      if (/night market|street food|temple|hotpot/.test(said)) updates.loves_add = [input.text.trim()];
+      const next = missing.find((m) => !(m === 'nationality' && updates.nationality) && !(m === 'traveller_type' && updates.traveller_type));
+      const questions: Record<string, { reply: string; quick_replies: string[] }> = {
+        nationality: {
+          reply: input.detected.nationality ? `Looks like you're from ${input.detected.nationality}. Right?` : 'Where are you from?',
+          quick_replies: input.detected.nationality ? ['Yes', 'No'] : [],
+        },
+        traveller_type: { reply: 'Are you studying in China or visiting?', quick_replies: ['Student', 'Tourist'] },
+        diet: { reply: 'Any diet I should follow?', quick_replies: ['Halal', 'Vegetarian', 'No restrictions'] },
+        allergies: { reply: 'Any food allergies?', quick_replies: ['Peanuts', 'Shellfish', 'None'] },
+        spice: { reply: 'How spicy do you like it?', quick_replies: ['No spice', 'Mild', 'Hot'] },
+        budget: { reply: 'What do you usually spend on a meal?', quick_replies: ['Under ¥40', '¥40–120', 'More'] },
+        loves: { reply: 'What do you love doing or eating?', quick_replies: ['Street food', 'Night markets', 'Temples'] },
+      };
+      const q = next ? questions[next] : null;
+      return q ? { ...q, updates, done: false } : { reply: 'Thanks! Talk to me from Me any time to change this.', quick_replies: [], updates, done: true };
+    },
+
+    async summarizeConversation(input) {
+      await wait(200);
+      const first = input.lines.find((l) => l.speaker === 'USER')?.text ?? '';
+      return {
+        title: input.context ? `At the ${input.context.toLowerCase()}` : 'A conversation',
+        summary: first ? `You said: “${first.slice(0, 120)}”.` : 'A short conversation.',
+        learned: [],
+        memories: [],
+        dna: emptyTwinUpdates(),
+      };
+    },
+
+        async placesReply(input) {
+      await wait(200);
+      const first = /^1\. ([^\n—]+)/m.exec(input.results)?.[1]?.trim();
+      return {
+        reply: first ? `My top pick is ${first}. Tap a card to navigate or save it.` : 'I couldn’t find anything for that. Try another search?',
+        quick_replies: ['Cheaper options', 'Something else'],
+      };
+    },
+
     async transcribe({ audio }) {
       await wait(150);
       // Tests send the transcript as base64 text; empty clips stand for silence.
@@ -114,6 +193,10 @@ export function mockProvider(): AgentProvider {
     async translateUi({ strings, target }) {
       await wait(100);
       return strings.map((s) => `[${target.code}] ${s}`);
+    },
+    async translatePlaces({ places, target }) {
+      await wait(100);
+      return places.map((p) => ({ ...p, name: `[${target.code}] ${p.name}` }));
     },
   };
 }

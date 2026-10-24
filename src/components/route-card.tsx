@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing, themed } from '@/constants/theme';
 import { PlaceThumb } from '@/components/place-thumb';
 import type { Place } from '@/data/places';
 import {
@@ -15,6 +15,7 @@ import {
   type TravelMode,
 } from '@/lib/directions';
 import type { useCurrentLocation } from '@/lib/location';
+import { requestRide } from '@/lib/place-actions';
 import { tx, useT } from '@/lib/i18n';
 
 const BLUE = '#2576FF';
@@ -31,9 +32,11 @@ type Props = {
   mode: TravelMode;
   onModeChange: (mode: TravelMode) => void;
   onClose: () => void;
+  /** False when the screen shows the place's name itself (Explore's draggable sheet header). */
+  showHeader?: boolean;
 };
 
-export function RouteCard({ place, location, routes, mode, onModeChange, onClose }: Props) {
+export function RouteCard({ place, location, routes, mode, onModeChange, onClose, showHeader = true }: Props) {
   const t = useT();
   const route = routes[mode];
 
@@ -47,8 +50,19 @@ export function RouteCard({ place, location, routes, mode, onModeChange, onClose
     ]);
   };
 
+  const ride = () => {
+    // Alert has no buttons on web; Amap's web map has no taxi, so there's nothing better to offer.
+    if (Platform.OS === 'web') return requestRide('amap', place);
+    Alert.alert(t('Get a ride'), t('For DiDi, the address is copied in Chinese: paste it as your destination.'), [
+      { text: 'DiDi 滴滴出行', onPress: () => requestRide('didi', place) },
+      { text: t('Amap taxi · 高德打车'), onPress: () => requestRide('amap', place) },
+      { text: t('Cancel'), style: 'cancel' as const },
+    ]);
+  };
+
   return (
     <View style={styles.card}>
+      {showHeader ? (
       <View style={styles.header}>
         <PlaceThumb place={place} size={48} />
         <View style={{ flex: 1 }}>
@@ -63,6 +77,7 @@ export function RouteCard({ place, location, routes, mode, onModeChange, onClose
           <Ionicons name="close" size={18} color={Colors.ink} />
         </Pressable>
       </View>
+      ) : null}
 
       {!location.coords ? (
         <Pressable
@@ -122,6 +137,10 @@ export function RouteCard({ place, location, routes, mode, onModeChange, onClose
           <Ionicons name="navigate" size={18} color="#fff" />
           <Text style={styles.goText}>{t('Go')}</Text>
         </Pressable>
+        <Pressable onPress={ride} style={({ pressed }) => [styles.rideBtn, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={t('Get a ride with DiDi or Amap')}>
+          <Ionicons name="car" size={18} color={Colors.ink} />
+          <Text style={styles.detailsText}>{t('Ride')}</Text>
+        </Pressable>
         <Pressable
           onPress={() => router.push({ pathname: '/place/[id]', params: { id: place.id } })}
           style={({ pressed }) => [styles.detailsBtn, pressed && styles.pressed]}
@@ -133,7 +152,7 @@ export function RouteCard({ place, location, routes, mode, onModeChange, onClose
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   card: { paddingHorizontal: Spacing.md, gap: Spacing.md },
   header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   name: { fontSize: 18, fontWeight: '800', color: Colors.ink },
@@ -154,7 +173,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     padding: Spacing.md,
     borderRadius: Radius.md,
-    backgroundColor: '#E8F0FF',
+    backgroundColor: Colors.blueSoft,
   },
   promptText: { flex: 1, fontSize: 14, fontWeight: '600', color: Colors.ink },
   modes: { flexDirection: 'row', gap: 6 },
@@ -175,7 +194,7 @@ const styles = StyleSheet.create({
   summary: { gap: 2 },
   duration: { fontSize: 28, fontWeight: '800', color: Colors.ink, letterSpacing: -0.5 },
   distance: { fontSize: 14, color: Colors.inkSoft },
-  estimate: { fontSize: 12, color: '#A26A00', marginTop: 4 },
+  estimate: { fontSize: 12, color: Colors.goldText, marginTop: 4 },
   actions: { flexDirection: 'row', gap: Spacing.sm },
   goBtn: {
     flex: 1,
@@ -188,6 +207,18 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   goText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  rideBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: Spacing.md,
+    height: 50,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.goldSoft,
+    borderWidth: 1,
+    borderColor: Colors.gold,
+  },
   detailsBtn: {
     paddingHorizontal: Spacing.lg,
     height: 50,
@@ -200,4 +231,4 @@ const styles = StyleSheet.create({
   },
   detailsText: { color: Colors.ink, fontSize: 16, fontWeight: '700' },
   pressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
-});
+}));

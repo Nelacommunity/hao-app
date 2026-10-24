@@ -26,7 +26,7 @@ export function formatDistance(km: number) {
  * Current position, asked for only when the user wants it (or already granted earlier). Returned in
  * GCJ-02 like AMap's places, routes and tiles, so distances and the map dot line up in China.
  */
-export function useCurrentLocation() {
+export function useCurrentLocation({ askOnMount = false }: { askOnMount?: boolean } = {}) {
   const [coords, setCoords] = useState<Coords | null>(null);
   const [status, setStatus] = useState<LocationStatus>('unknown');
   const [canAskAgain, setCanAskAgain] = useState(true);
@@ -56,18 +56,22 @@ export function useCurrentLocation() {
     return true;
   }, [read]);
 
-  // If permission was granted before, show the location straight away without prompting.
+  // If permission was granted before, show the location straight away. Screens built around the
+  // user's position (askOnMount) ask once when opened; others wait until the user wants it.
   useEffect(() => {
     let cancelled = false;
     Location.getForegroundPermissionsAsync().then((permission) => {
       if (cancelled) return;
       setCanAskAgain(permission.canAskAgain);
       if (permission.granted) read();
+      else if (askOnMount && permission.canAskAgain) request();
+      // Already refused for good: say so, so the screen can fall back (other screens keep 'unknown').
+      else if (askOnMount) setStatus('denied');
     });
     return () => {
       cancelled = true;
     };
-  }, [read]);
+  }, [read, request, askOnMount]);
 
   const openSettings = useCallback(() => Linking.openSettings(), []);
 

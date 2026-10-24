@@ -49,9 +49,17 @@ export function forgetHostedRoom(type: RoomType) {
   delete rooms[type];
 }
 
-// Where the user said they are (restaurant, taxi…), chosen on the QR page and used by the conversation.
-let roomContext: RoomContext | null = 'restaurant';
+// Where the conversation happens when Hao knows it ("Talk to staff" on a place card sets it); null is a casual chat.
+let roomContext: RoomContext | null = null;
 export const getRoomContext = () => roomContext;
 export const setRoomContext = (next: RoomContext | null) => {
   roomContext = next;
+};
+
+// The place a Voice Room was opened for ("Talk to staff" on a place card). When the conversation
+// ends, Hao asks whether the user went there.
+let roomPlace: { id: string; name: string } | null = null;
+export const getRoomPlace = () => roomPlace;
+export const setRoomPlace = (next: { id: string; name: string } | null) => {
+  roomPlace = next;
 };

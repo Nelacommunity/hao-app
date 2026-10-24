@@ -1,5 +1,5 @@
 import type { AudioInput, CaptionResult, LanguageTarget, RoomAgentTurn, RoomTurnLine, TranslationResult } from '@shared/ai/types';
-import type { RoomContext, RoomSummary } from '@shared/rooms/protocol';
+import type { ConvCaption, RoomContext, RoomSummary } from '@shared/rooms/protocol';
 
 import { supabase } from '@/lib/supabase';
 
@@ -9,11 +9,16 @@ export type RoomTurnRequest = {
   text?: string;
   userLanguage: LanguageTarget;
   localLanguage: LanguageTarget;
+  /** The guest's name, so Hao can address them. */
+  localName?: string | null;
   context: RoomContext | null;
   recent: RoomTurnLine[];
   introduced: boolean;
   summary: RoomSummary | null;
 };
+/** What saving a finished conversation did (see /api/room/finish). */
+export type RoomSaveResult = { saved: boolean; chatId?: string; title?: string; dna?: string[] };
+
 export type RoomTurnResponse = { said: string; turn: RoomAgentTurn | null; timing: { stt: number; llm: number } };
 /** Early parts of a turn, delivered while the rest is still being generated. */
 export type RoomTurnHandlers = { onSaid?: (said: string) => void; onSay?: (text: string) => void };
@@ -23,7 +28,15 @@ export type RoomApi = {
   turn: (req: RoomTurnRequest, handlers?: RoomTurnHandlers) => Promise<RoomTurnResponse>;
   caption: (audio: AudioInput, targets: LanguageTarget[]) => Promise<CaptionResult>;
   translate: (text: string) => Promise<TranslationResult>;
-  finish: (summary: RoomSummary | null, context: RoomContext | null) => Promise<void>;
+  /** Saves a finished conversation to the user's chats, memory and Hao DNA (only when they choose Save). */
+  save: (input: {
+    captions: ConvCaption[];
+    summary: RoomSummary | null;
+    context: RoomContext | null;
+    language: LanguageTarget;
+    /** Who was talking: the user and the guest (from the join page). */
+    names: { user: string; local: string | null };
+  }) => Promise<RoomSaveResult>;
 };
 
 async function request(path: string, body: unknown) {
@@ -88,7 +101,6 @@ export const roomApi: RoomApi = {
   turn: streamTurn,
   caption: (audio, targets) => post('/api/room/caption', { audio, targets }),
   translate: (text) => post('/api/room/translate', { text }),
-  finish: async (summary, context) => {
-    await post('/api/room/finish', { summary, context }).catch(() => {});
-  },
+  save: ({ captions, summary, context, language, names }) =>
+    post<RoomSaveResult>('/api/room/finish', { lines: captions.map(({ speaker, to, text }) => ({ speaker, to, text })), summary, context, language, names }),
 };

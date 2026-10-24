@@ -2,7 +2,7 @@ import { LEAFLET_CSS, LEAFLET_JS } from '@/components/map/leaflet-assets.generat
 
 /** What the app sends into the map page (coordinates already in the tiles' GCJ-02 system). */
 export type MapState = {
-  places: { id: string; lat: number; lng: number; color: string; name: string; selected: boolean }[];
+  places: { id: string; lat: number; lng: number; color: string; emoji: string; name: string; selected: boolean }[];
   user: { lat: number; lng: number } | null;
   route: { coords: [number, number][]; approximate: boolean } | null;
 };
@@ -10,6 +10,8 @@ export type MapView =
   | { kind: 'center'; lat: number; lng: number; zoom: number }
   | { kind: 'fit'; coords: [number, number][]; bottom: number };
 export type MapEvent = { type: 'ready' } | { type: 'select'; id: string };
+/** dark: the app's dark theme, so the map matches it. */
+export type MapPageOptions = { lat: number; lng: number; zoom: number; labels: 'en' | 'zh_cn'; accent: string; dark: boolean };
 
 // Amap (高德) tiles: reachable in mainland China without a key; `lang` picks label language.
 const tileUrl = (lang: 'en' | 'zh_cn') =>
@@ -19,7 +21,7 @@ const tileUrl = (lang: 'en' | 'zh_cn') =>
  * A self-contained Leaflet page; the app drives it with window.haoState / window.haoView. Events go to
  * the React Native WebView, or to the parent window when the page runs in an iframe on web.
  */
-export function leafletMapHtml(options: { lat: number; lng: number; zoom: number; labels: 'en' | 'zh_cn'; accent: string }) {
+export function leafletMapHtml(options: MapPageOptions) {
   return `<!doctype html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>${LEAFLET_CSS}
@@ -30,6 +32,16 @@ html,body,#map{margin:0;height:100%;background:#F2EFE9}
  font:700 12px -apple-system,Roboto,sans-serif;padding:4px 8px;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.25)}
 .me{width:16px;height:16px;border-radius:50%;background:#2576FF;border:3px solid #fff;box-shadow:0 0 0 6px rgba(37,118,255,.2);box-sizing:border-box}
 .leaflet-control-attribution{font-size:9px}
+${
+  options.dark
+    ? // AMap has no dark raster tiles: invert them and turn the colours back, which reads like a night map.
+      `html,body,#map{background:#1B1B1D}
+.leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.88) saturate(.8)}
+.lbl{background:#1E1E20;color:#E9E9EB}
+.leaflet-control-attribution{background:rgba(30,30,32,.8)!important;color:#A3A3A8}
+.leaflet-control-attribution a{color:#A3A3A8}`
+    : ''
+}
 </style></head><body><div id="map"></div>
 <script>${LEAFLET_JS}</script>
 <script>

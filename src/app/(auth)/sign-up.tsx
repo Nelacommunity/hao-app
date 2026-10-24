@@ -5,10 +5,11 @@ import { Pressable, StyleSheet, Text, type TextInputInstance, View } from 'react
 
 import { AuthFooter, AuthScreen, Field, FormMessage, isEmail, OnRed, PrimaryButton } from '@/components/auth-ui';
 import { LanguagePicker } from '@/components/language-picker';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing, themed } from '@/constants/theme';
 import { setTravellerLanguage, useTravellerLanguage } from '@/lib/language-store';
 import { supabase } from '@/lib/supabase';
 import { useT } from '@/lib/i18n';
+import { getOnboardingChoices } from '@/lib/onboarding-choices';
 
 const MIN_PASSWORD = 8;
 
@@ -42,6 +43,9 @@ export default function SignUpScreen() {
           display_name: name.trim() || null,
           language_code: language.code,
           language_name: language.name,
+          // From onboarding: lets Hao rank places by what people from home liked.
+          nationality: getOnboardingChoices().nationality,
+          share_visits: getOnboardingChoices().shareVisits,
         },
       },
     });
@@ -131,7 +135,7 @@ export default function SignUpScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   label: { fontSize: 13, fontWeight: '700', color: OnRed.soft, letterSpacing: 0.2 },
   language: {
     flexDirection: 'row',
@@ -147,4 +151,4 @@ const styles = StyleSheet.create({
   languageSub: { fontSize: 12, color: Colors.muted },
   change: { fontSize: 14, fontWeight: '700', color: Colors.red },
   legal: { fontSize: 12, lineHeight: 17, color: OnRed.faint, textAlign: 'center' },
-});
+}));

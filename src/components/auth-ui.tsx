@@ -19,7 +19,7 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing, themed } from '@/constants/theme';
 import { useT } from '@/lib/i18n';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -199,7 +199,7 @@ export function FormMessage({ message, tone = 'error' }: { message: string | nul
 
 export const isEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   watermark: {
     position: 'absolute',
     right: -60,
@@ -283,4 +283,4 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.card,
   },
   messageText: { flex: 1, fontSize: 14, lineHeight: 20, color: Colors.redDark, fontWeight: '600' },
-});
+}));

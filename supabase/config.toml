@@ -395,6 +395,10 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# Nightly Discover stories. It checks the caller itself (service role key from pg_cron, or an admin's token).
+[functions.generate-stories]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

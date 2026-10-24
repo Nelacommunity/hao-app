@@ -1,5 +1,5 @@
 import type { AutonomyKey, Budget, DietTag, Preferences, SpiceLevel } from './types';
-import { tx } from '../i18n/tx';
+import { tx } from '../i18n/tx.ts';
 
 export const DefaultPreferences: Preferences = { diet: [], allergies: [], spice: 'medium', budget: 'medium', autonomy: ['spice', 'here_or_to_go'] };
 

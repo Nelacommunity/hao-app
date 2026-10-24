@@ -7,7 +7,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing, themed } from '@/constants/theme';
 import { tx, useT } from '@/lib/i18n';
 
 const GREETINGS = ['欢迎', 'Welcome', 'Bienvenue', 'ようこそ', 'Bienvenido', '환영합니다'];
@@ -88,7 +88,7 @@ export default function LandingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: Spacing.lg,
@@ -159,4 +159,4 @@ const styles = StyleSheet.create({
   },
   secondaryText: { fontSize: 17, fontWeight: '700', color: '#fff' },
   pressed: { opacity: 0.85, transform: [{ scale: 0.985 }] },
-});
+}));
