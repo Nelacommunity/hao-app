@@ -10,16 +10,17 @@ export type HostedRoom = { roomId: string; type: RoomType; joinUrl: string; expi
 const ROOM_TTL_MS = 3 * 60 * 60 * 1000;
 
 /**
- * Where guests open the join page (public/join.html, served by the Expo web server):
- * the dev server the app was loaded from (host and port), https when started with
- * `npx expo start --tunnel`, which the guest's microphone needs; otherwise EXPO_PUBLIC_WEB_URL
- * (e.g. an EAS Hosting URL), which production builds use since they have no dev server.
+ * Where guests open the join page (public/join.html). The guest's microphone needs https, so:
+ * the dev server when it's https (`npx expo start --tunnel`), otherwise EXPO_PUBLIC_WEB_URL (the
+ * EAS Hosting deployment, which production builds always use), otherwise the plain-http dev server.
  */
 export function webBaseUrl() {
   if (Platform.OS === 'web' && typeof window !== 'undefined') return window.location.origin;
   const host = Constants.expoConfig?.hostUri;
-  if (host) return host.includes('exp.direct') ? `https://${host.replace(/:\d+$/, '')}` : `http://${host}`;
-  return process.env.EXPO_PUBLIC_WEB_URL?.replace(/\/+$/, '') ?? '';
+  if (host?.includes('exp.direct')) return `https://${host.replace(/:\d+$/, '')}`;
+  const configured = process.env.EXPO_PUBLIC_WEB_URL?.replace(/\/+$/, '');
+  if (configured) return configured;
+  return host ? `http://${host}` : '';
 }
 
 // The rooms this device is hosting, shared by the QR page and the live screens.
