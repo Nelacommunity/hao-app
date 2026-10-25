@@ -74,7 +74,7 @@ export default function DiscoverScreen() {
     const timer = setTimeout(() => setWaited(true), LOCATION_WAIT_MS);
     return () => clearTimeout(timer);
   }, []);
-  const ready = waited || !!location.coords || location.status === 'denied';
+  const ready = waited || !!location.coords || location.status === 'denied' || location.status === 'unavailable';
   const coords = ready ? location.coords : null;
   const languageCode = language.code.startsWith('custom:') ? 'en' : language.code.split('-')[0];
 

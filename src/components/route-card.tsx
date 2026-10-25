@@ -34,13 +34,15 @@ type Props = {
   onClose: () => void;
   /** False when the screen shows the place's name itself (Explore's draggable sheet header). */
   showHeader?: boolean;
+  /** Turn-by-turn in Hao. Without it, Go hands off to a maps app. */
+  onStart?: () => void;
 };
 
-export function RouteCard({ place, location, routes, mode, onModeChange, onClose, showHeader = true }: Props) {
+export function RouteCard({ place, location, routes, mode, onModeChange, onClose, showHeader = true, onStart }: Props) {
   const t = useT();
   const route = routes[mode];
 
-  const go = () => {
+  const openApp = () => {
     const target = { latitude: place.latitude, longitude: place.longitude, name: place.nameZh };
     // Alert has no buttons on web, so open Amap's web map directly there.
     if (Platform.OS === 'web' || MapsApps.length === 1) return openInMaps('amap', target, mode);
@@ -82,13 +84,18 @@ export function RouteCard({ place, location, routes, mode, onModeChange, onClose
       {!location.coords ? (
         <Pressable
           onPress={location.status === 'denied' && !location.canAskAgain ? location.openSettings : location.request}
+          disabled={location.status === 'loading'}
           style={({ pressed }) => [styles.prompt, pressed && { opacity: 0.85 }]}
           accessibilityRole="button">
           {location.status === 'loading' ? <ActivityIndicator color={BLUE} /> : <Ionicons name="navigate" size={18} color={BLUE} />}
           <Text style={styles.promptText}>
-            {location.status === 'denied' && !location.canAskAgain
-              ? t('Allow location in Settings to see the way there')
-              : t('Use my location to show the way there')}
+            {location.status === 'loading'
+              ? t('Finding your location…')
+              : location.status === 'unavailable'
+                ? t('Can’t find your location. Turn on Location (GPS), then tap to try again.')
+                : location.status === 'denied' && !location.canAskAgain
+                  ? t('Allow location in Settings to see the way there')
+                  : t('Use my location to show the way there')}
           </Text>
         </Pressable>
       ) : (
@@ -133,10 +140,23 @@ export function RouteCard({ place, location, routes, mode, onModeChange, onClose
       )}
 
       <View style={styles.actions}>
-        <Pressable onPress={go} style={({ pressed }) => [styles.goBtn, pressed && styles.pressed]} accessibilityRole="button">
+        <Pressable
+          onPress={onStart && location.coords ? onStart : openApp}
+          style={({ pressed }) => [styles.goBtn, pressed && styles.pressed]}
+          accessibilityRole="button"
+          accessibilityLabel={onStart ? t('Start navigation') : t('Navigate with a maps app')}>
           <Ionicons name="navigate" size={18} color="#fff" />
-          <Text style={styles.goText}>{t('Go')}</Text>
+          <Text style={styles.goText}>{onStart && location.coords ? t('Start') : t('Go')}</Text>
         </Pressable>
+        {onStart ? (
+          <Pressable
+            onPress={openApp}
+            style={({ pressed }) => [styles.iconBtn, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={t('Open in AMap, Apple Maps or Google Maps')}>
+            <Ionicons name="open-outline" size={20} color={Colors.ink} />
+          </Pressable>
+        ) : null}
         <Pressable onPress={ride} style={({ pressed }) => [styles.rideBtn, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={t('Get a ride with DiDi or Amap')}>
           <Ionicons name="car" size={18} color={Colors.ink} />
           <Text style={styles.detailsText}>{t('Ride')}</Text>
@@ -218,6 +238,16 @@ const styles = themed(() => StyleSheet.create({
     backgroundColor: Colors.goldSoft,
     borderWidth: 1,
     borderColor: Colors.gold,
+  },
+  iconBtn: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   detailsBtn: {
     paddingHorizontal: Spacing.lg,

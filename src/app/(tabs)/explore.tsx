@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import Animated, {
@@ -15,12 +15,13 @@ import Animated, {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CategoryTiles } from '@/components/category-tiles';
+import { NavigationView } from '@/components/navigation-view';
 import { PlaceMap } from '@/components/place-map';
 import { PlaceThumb, placeMeta } from '@/components/place-thumb';
 import { RouteCard } from '@/components/route-card';
 import { Colors, Radius, Shadow, Spacing, themed } from '@/constants/theme';
 import { CategoryMeta, Cities, type CityId, type Place, type PlaceCategory } from '@/data/places';
-import { formatDuration, formatMeters, useDirections, type TravelMode } from '@/lib/directions';
+import { formatDuration, formatMeters, navProgress, useDirections, type TravelMode } from '@/lib/directions';
 import { distanceKm, formatDistance, useCurrentLocation } from '@/lib/location';
 import { useT } from '@/lib/i18n';
 import { getCachedPlace, usePlaces } from '@/lib/places';
@@ -42,13 +43,20 @@ export default function ExploreScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   // Bumped on "locate me" so the map re-centres even if the position hasn't changed.
   const [recenter, setRecenter] = useState(0);
-  const location = useCurrentLocation({ askOnMount: true });
+  // Turn-by-turn in Hao: the camera follows the user and the sheet gives way to guidance.
+  const [navigating, setNavigating] = useState(false);
+  // Live position for the blue dot; GPS-precise while navigating.
+  const location = useCurrentLocation({ askOnMount: true, watch: true, precise: navigating });
   const here = location.coords;
   // Where the map centres on the user: the first fix, and again on "locate me". Later fixes move the
   // blue dot but not the camera, so the map stays where the user zoomed and panned.
   const [anchor, setAnchor] = useState<typeof here>(null);
   if (here && !anchor) setAnchor(here);
-  const shown: Area = area === 'nearby' && location.status === 'denied' ? 'beijing' : area;
+  // No position (refused, or the phone can't get a fix): show Beijing, and say why.
+  const noFix = !anchor && (location.status === 'denied' || location.status === 'unavailable');
+  const shown: Area = area === 'nearby' && noFix ? 'beijing' : area;
+  // Near me opens on the user, never on a placeholder city while the first fix is on its way.
+  const findingYou = area === 'nearby' && !anchor && !noFix;
   const insets = useSafeAreaInsets();
 
   // Pull-up sheet: collapsed (map only), half, or full (just below the area dropdown).
@@ -99,8 +107,30 @@ export default function ExploreScreen() {
   // Tapping a place shows the way there from the user's location.
   const [mode, setMode] = useState<TravelMode>('foot');
   const selectedPlace = (selectedId && getCachedPlace(selectedId)) || null;
-  const directions = useDirections(selectedPlace ? here : null, selectedPlace);
+  // While navigating, the route starts where navigation (or the last reroute) began, and only that mode is fetched.
+  const [navOrigin, setNavOrigin] = useState<typeof here>(null);
+  const directions = useDirections(navigating ? navOrigin : selectedPlace ? here : null, selectedPlace, navigating ? [mode] : undefined);
   const activeRoute = selectedPlace && here ? (directions.routes[mode] ?? null) : null;
+  const progress = navigating && activeRoute && here && selectedPlace ? navProgress(activeRoute, here, selectedPlace) : null;
+
+  // Off the route by more than a street's width: route again from here (at most every 10 s).
+  const lastReroute = useRef(0);
+  const offRoute = !!progress && !activeRoute?.approximate && !progress.arrived && progress.offRouteM > (mode === 'foot' ? 35 : 50);
+  useEffect(() => {
+    if (!offRoute || !here || Date.now() - lastReroute.current < 10_000) return;
+    lastReroute.current = Date.now();
+    setNavOrigin(here);
+  }, [offRoute, here]);
+
+  const startNavigation = () => {
+    if (!here) return;
+    setNavOrigin(here);
+    setNavigating(true);
+  };
+  const endNavigation = () => {
+    setNavigating(false);
+    setNavOrigin(null);
+  };
 
   const selectPlace = (id: string) => {
     const place = getCachedPlace(id);
@@ -135,7 +165,8 @@ export default function ExploreScreen() {
 
   // Live from AMap: around the user (closest first) or the city's top places.
   const cat = category === 'all' ? undefined : category;
-  const search = usePlaces(shown === 'nearby' ? (here ? { near: here, radius: 5000, category: cat } : null) : { city: city!.nameZh, category: cat });
+  // Around where the map was centred on the user, so walking around doesn't re-search on every step.
+  const search = usePlaces(shown === 'nearby' ? (anchor ? { near: anchor, radius: 5000, category: cat } : null) : { city: city!.nameZh, category: cat });
   const places = useMemo(
     // Keep the selected place on the map even when it isn't in the current results.
     () => (selectedPlace && !search.places.some((p) => p.id === selectedPlace.id) ? [selectedPlace, ...search.places] : search.places),
@@ -166,22 +197,30 @@ export default function ExploreScreen() {
     setRecenter((n) => n + 1);
   };
 
-  const label = shown === 'nearby' ? t('Near me') : `${t(city!.name)} ${city!.nameZh}`;
+  const label = shown === 'nearby' ? (findingYou ? t('Finding your location…') : t('Near me')) : `${t(city!.name)} ${city!.nameZh}`;
 
   return (
     <View style={styles.container} onLayout={onLayout}>
       <View style={StyleSheet.absoluteFill}>
-        <PlaceMap
-          places={places}
-          center={center}
-          // Street level around the user (about zoom 15), a whole city otherwise.
-          delta={shown === 'nearby' ? 0.015 : 0.25}
-          userLocation={here}
-          route={activeRoute}
-          bottomInset={half}
-          selectedId={selectedId}
-          onSelect={selectPlace}
-        />
+        {findingYou ? (
+          <View style={styles.finding}>
+            <ActivityIndicator color="#2576FF" />
+            <Text style={styles.findingText}>{t('Finding your location…')}</Text>
+          </View>
+        ) : (
+          <PlaceMap
+            places={places}
+            center={center}
+            // Street level around the user (about zoom 15), a whole city otherwise.
+            delta={shown === 'nearby' ? 0.015 : 0.25}
+            userLocation={here}
+            route={activeRoute}
+            bottomInset={half}
+            selectedId={selectedId}
+            onSelect={navigating ? () => {} : selectPlace}
+            follow={navigating ? { heading: location.heading } : null}
+          />
+        )}
 
         {menuOpen ? (
           <Animated.View entering={FadeIn.duration(150)} style={StyleSheet.absoluteFill}>
@@ -189,6 +228,16 @@ export default function ExploreScreen() {
           </Animated.View>
         ) : null}
 
+        {navigating && selectedPlace ? (
+          <NavigationView
+            place={selectedPlace}
+            mode={mode}
+            progress={progress}
+            rerouting={directions.loading}
+            approximate={!!activeRoute?.approximate}
+            onEnd={endNavigation}
+          />
+        ) : (
         <SafeAreaView edges={['top']} style={styles.overlay} pointerEvents="box-none">
           <Pressable
             onPress={() => setMenuOpen((o) => !o)}
@@ -218,6 +267,8 @@ export default function ExploreScreen() {
                 subtitle={
                   location.status === 'denied'
                     ? t('Location is off. Tap to allow.')
+                    : location.status === 'unavailable'
+                      ? t('Can’t find your location. Turn on Location (GPS), then tap to try again.')
                     : here
                       ? t('All places, closest first')
                       : t('Use my current location')
@@ -243,9 +294,11 @@ export default function ExploreScreen() {
             </Animated.View>
           ) : null}
         </SafeAreaView>
-
+        )}
       </View>
 
+      {navigating ? null : (
+      <>
       <Animated.View style={[styles.locateWrap, locateStyle]}>
         <Pressable
           onPress={locateMe}
@@ -315,6 +368,7 @@ export default function ExploreScreen() {
             mode={mode}
             onModeChange={setMode}
             onClose={() => setSelectedId(undefined)}
+            onStart={startNavigation}
           />
           </Animated.View>
         ) : (
@@ -326,6 +380,10 @@ export default function ExploreScreen() {
             {location.status === 'denied' && area === 'nearby' ? (
               <Pressable onPress={location.canAskAgain ? location.request : location.openSettings}>
                 <Text style={styles.notice}>{t('Location is off, so you’re seeing Beijing. Tap to turn it on for places near you.')}</Text>
+              </Pressable>
+            ) : location.status === 'unavailable' && area === 'nearby' && !anchor ? (
+              <Pressable onPress={location.request}>
+                <Text style={styles.notice}>{t('Can’t find your location, so you’re seeing Beijing. Turn on Location (GPS), then tap to try again.')}</Text>
               </Pressable>
             ) : null}
 
@@ -381,6 +439,8 @@ export default function ExploreScreen() {
           </Animated.View>
         )}
       </Animated.View>
+      </>
+      )}
     </View>
   );
 }
@@ -520,6 +580,8 @@ const styles = themed(() => StyleSheet.create({
   notice: { fontSize: 13, color: Colors.inkSoft, paddingHorizontal: Spacing.md, marginBottom: Spacing.sm },
   list: { paddingHorizontal: Spacing.md, paddingBottom: Spacing.lg, gap: Spacing.sm },
   empty: { textAlign: 'center', color: Colors.muted, marginTop: Spacing.lg },
+  finding: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, backgroundColor: Colors.paper },
+  findingText: { fontSize: 15, fontWeight: '700', color: Colors.inkSoft },
   placeRow: {
     flexDirection: 'row',
     alignItems: 'center',

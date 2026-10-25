@@ -55,10 +55,14 @@ ${options.dark ? 'html,body,#map{background:#1B1B1D}\n.lbl{background:#1E1E20;co
     if(s.user){me=new AMap.Marker({position:[s.user.lng,s.user.lat],content:'<div class="me"></div>',offset:new AMap.Pixel(-9,-9),zIndex:300,bubble:true});map.add(me);}
   }
   function setView(v){
+    if(v.kind!=='follow'&&map.getRotation())map.setRotation(0,false,300);
     if(v.kind==='fit'){
       var lats=v.coords.map(function(c){return c[0];}), lngs=v.coords.map(function(c){return c[1];});
       var b=new AMap.Bounds([Math.min.apply(0,lngs),Math.min.apply(0,lats)],[Math.max.apply(0,lngs),Math.max.apply(0,lats)]);
       map.setBounds(b,false,[140,48,v.bottom+48,48]);
+    } else if(v.kind==='follow'){
+      map.setZoomAndCenter(v.zoom,[v.lng,v.lat],false,500);
+      if(v.bearing!=null)map.setRotation((360-v.bearing)%360,false,500);
     } else map.setZoomAndCenter(v.zoom,[v.lng,v.lat],false,450);
   }
   // Calls that arrive before the API has loaded keep only the latest of each.

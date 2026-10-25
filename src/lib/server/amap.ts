@@ -1,5 +1,7 @@
 // AMap (高德) Web Service calls for API routes only. AMAP_KEY stays on the server.
 // Docs: https://lbs.amap.com/api/webservice/guide/api-advanced/newpoisearch
+import type { Maneuver, RouteResult, RouteStep } from '@shared/places/route';
+
 import { categoryOf, type Place } from '@/data/places';
 
 const BASE = 'https://restapi.amap.com';
@@ -129,34 +131,59 @@ export function placesById(ids: string[]) {
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
-type AmapStep = { step_distance?: Text; polyline?: Text; cost?: { duration?: Text } };
+type AmapStep = { step_distance?: Text; polyline?: Text; road_name?: Text; cost?: { duration?: Text }; navi?: { action?: Text; assistant_action?: Text } };
 type AmapPath = { distance?: Text; cost?: { duration?: Text }; steps?: AmapStep[] };
 
 const ROUTE_PATH = { foot: 'walking', bike: 'bicycling', car: 'driving' } as const;
 export type RouteMode = keyof typeof ROUTE_PATH;
 export const isRouteMode = (v: string): v is RouteMode => v in ROUTE_PATH;
 
-/** Street route between two GCJ-02 points, as [lat, lng] pairs. */
-export async function route(mode: RouteMode, from: { lat: number; lng: number }, to: { lat: number; lng: number }) {
+// AMap's navi actions (Chinese) as language-neutral manoeuvres.
+const AMAP_ACTIONS: [RegExp, Maneuver][] = [
+  [/调头/, 'uturn'],
+  [/环岛/, 'roundabout'],
+  [/左后方|向左急转/, 'sharp-left'],
+  [/右后方|向右急转/, 'sharp-right'],
+  [/左前方/, 'slight-left'],
+  [/右前方/, 'slight-right'],
+  [/靠左/, 'keep-left'],
+  [/靠右/, 'keep-right'],
+  [/左转/, 'left'],
+  [/右转/, 'right'],
+  [/到达/, 'arrive'],
+];
+const maneuverOf = (action: string): Maneuver => AMAP_ACTIONS.find(([re]) => re.test(action))?.[1] ?? 'straight';
+
+/** Street route between two GCJ-02 points, as [lat, lng] pairs, with turn-by-turn steps. */
+export async function route(mode: RouteMode, from: { lat: number; lng: number }, to: { lat: number; lng: number }): Promise<RouteResult> {
   const data = await amap<{ route?: { paths?: AmapPath[] } }>(`/v5/direction/${ROUTE_PATH[mode]}`, {
     origin: lngLat(from.lat, from.lng),
     destination: lngLat(to.lat, to.lng),
-    show_fields: 'cost,polyline',
+    show_fields: 'cost,polyline,navi',
   });
   const path = data.route?.paths?.[0];
   if (!path) throw new AmapError('AMap found no route');
   const steps = path.steps ?? [];
   // Polylines are "lng,lat;lng,lat"; read them as a flat list of numbers to be safe.
   const coords: [number, number][] = [];
+  const out: RouteStep[] = [];
+  // AMap puts the manoeuvre at the END of a step ("walk 120 m, then turn left"): each step is shown as
+  // "follow this road", and its action becomes the next step's manoeuvre.
+  let next: Maneuver = 'depart';
   for (const step of steps) {
+    out.push({ maneuver: next, road: text(step.road_name), distanceM: Number(text(step.step_distance)) || 0, start: coords.length });
+    next = maneuverOf(text(step.navi?.action) || text(step.navi?.assistant_action));
     const nums = text(step.polyline).split(/[;,]/).map(Number);
     for (let i = 0; i + 1 < nums.length; i += 2) coords.push([nums[i + 1], nums[i]]);
   }
+  if (coords.length) out.push({ maneuver: 'arrive', road: '', distanceM: 0, start: coords.length - 1 });
   const stepSeconds = steps.reduce((sum, s) => sum + (Number(text(s.cost?.duration)) || 0), 0);
   return {
     coords,
     distanceM: Number(text(path.distance)) || 0,
     durationS: Number(text(path.cost?.duration)) || stepSeconds,
+    steps: out,
+    source: 'amap',
   };
 }
 

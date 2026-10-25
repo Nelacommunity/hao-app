@@ -216,8 +216,10 @@ export function useConversationHost({ code, userLanguage, userName, initialConte
       } catch (e) {
         s.turnPending = false;
         setPhase('idle');
+        console.warn('[room] turn failed', e);
+        // The guest's page words this in their language; the host sees the actual reason.
         if (speaker === 'LOCAL') toLocal({ t: 'error', code: 'ai_failed', message: '抱歉，出了点问题，请再说一次。' });
-        else setNotice(e instanceof Error ? e.message : 'Hao had a problem with that turn.');
+        setNotice(e instanceof Error ? e.message : 'Hao had a problem with that turn.');
       }
     },
     [api, caption, played, setPhase, toLocal, userLanguage]

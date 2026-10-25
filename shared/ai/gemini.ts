@@ -167,6 +167,9 @@ export function completedField(partialJson: string, field: string): string | nul
 
 type Part = { text: string } | { inlineData: { mimeType: string; data: string } };
 
+/** HTTP statuses worth retrying: rate limited, or the model is briefly unavailable. */
+const TRANSIENT = new Set([429, 500, 502, 503, 504]);
+
 // Gemini's responseSchema uses upper-case OpenAPI type names.
 function toGeminiSchema(schema: JsonSchema): object {
   switch (schema.type) {
@@ -249,12 +252,23 @@ export function geminiProvider(config: GeminiConfig): AgentProvider {
 
     // With onText the reply is streamed (server-sent events) so callers can act on the first fields early.
     const method = onText ? 'streamGenerateContent?alt=sse' : 'generateContent';
-    const call = () =>
+    const once = () =>
       fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:${method}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.apiKey },
         body: body(),
       });
+    // Rate limits and "model overloaded" are usually gone a moment later: retry twice before giving up.
+    const call = async () => {
+      let res = await once();
+      for (const wait of [700, 1500]) {
+        if (!TRANSIENT.has(res.status)) break;
+        console.warn(`[ai] ${model} returned ${res.status}; retrying in ${wait}ms`);
+        await new Promise((r) => setTimeout(r, wait));
+        res = await once();
+      }
+      return res;
+    };
 
     let res = await call();
     if (res.status === 400 && thinkingLevel()) {

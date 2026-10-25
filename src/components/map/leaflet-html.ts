@@ -8,7 +8,9 @@ export type MapState = {
 };
 export type MapView =
   | { kind: 'center'; lat: number; lng: number; zoom: number }
-  | { kind: 'fit'; coords: [number, number][]; bottom: number };
+  | { kind: 'fit'; coords: [number, number][]; bottom: number }
+  /** Navigation: keep the user in view, heading up where the map can rotate. */
+  | { kind: 'follow'; lat: number; lng: number; zoom: number; bearing: number | null };
 export type MapEvent = { type: 'ready' } | { type: 'select'; id: string };
 /** dark: the app's dark theme, so the map matches it. */
 export type MapPageOptions = { lat: number; lng: number; zoom: number; labels: 'en' | 'zh_cn'; accent: string; dark: boolean };
@@ -69,6 +71,7 @@ ${
   };
   window.haoView=function(v){
     if(v.kind==='fit'){map.flyToBounds(L.latLngBounds(v.coords),{paddingTopLeft:[48,140],paddingBottomRight:[48,v.bottom+48],duration:0.45});}
+    else if(v.kind==='follow'){map.setView([v.lat,v.lng],v.zoom,{animate:true,duration:0.5});}
     else{map.flyTo([v.lat,v.lng],v.zoom,{duration:0.45});}
   };
   post({type:'ready'});

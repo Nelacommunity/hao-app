@@ -6,6 +6,7 @@
   var app = document.getElementById('app');
   var statusEl = document.getElementById('status');
   var toastEl = document.getElementById('toast');
+  var subEl = document.getElementById('brand-sub');
   // Rooms run on Supabase Realtime; the host's phone acts as the room. The link carries the code and type.
   var query = new URLSearchParams(location.search);
   var roomId = (query.get('r') || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
@@ -26,11 +27,44 @@
     });
     return node;
   }
-  function render(children) {
+
+  // Line icons in the app's style. The markup is fixed here (never model output), so innerHTML is safe.
+  var ICONS = {
+    mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/>',
+    micOff: '<path d="M2 2l20 20"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><path d="M12 19v3"/>',
+    stop: '<rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" stroke="none"/>',
+    volume: '<path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>',
+    keyboard: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M10 13h4M7 16h10"/>',
+    close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+    send: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+    chevronRight: '<path d="m9 18 6-6-6-6"/>',
+    chevronDown: '<path d="m6 9 6 6 6-6"/>',
+    globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+    shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+    alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
+    check: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/>',
+    clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    scan: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/>',
+    question: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  };
+  function icon(name) {
+    var span = el('span', { class: 'icon', 'aria-hidden': 'true' });
+    span.innerHTML = '<svg viewBox="0 0 24 24">' + ICONS[name] + '</svg>';
+    return span;
+  }
+  function dots() {
+    return el('span', { class: 'typing', 'aria-hidden': 'true' }, [el('span'), el('span'), el('span')]);
+  }
+
+  /** `chat` pages fill the screen edge to edge (thread + dock); the rest are padded forms. */
+  function render(children, chat) {
+    app.className = chat ? 'app chat' : 'app';
     app.replaceChildren.apply(app, children);
   }
   var toastTimer;
   function toast(text) {
+    if (!text) return;
     toastEl.textContent = text;
     toastEl.hidden = false;
     clearTimeout(toastTimer);
@@ -42,6 +76,9 @@
     statusEl.hidden = !text;
     statusEl.textContent = text || '';
     statusEl.classList.toggle('offline', !!offline);
+  }
+  function setSub(text) {
+    subEl.textContent = text;
   }
   function store(key, value) {
     try {
@@ -97,7 +134,7 @@
       return false;
     }
     function sendRaw(msg) {
-      channel.send({ type: 'broadcast', event: 'cli', payload: { from: p.pid, role: p.role, language: myLang, name: myName, msg: msg } });
+      return channel.send({ type: 'broadcast', event: 'cli', payload: { from: p.pid, role: p.role, language: myLang, name: myName, msg: msg } });
     }
     function track() {
       channel.track({ pid: p.pid, role: p.role, language: myLang, name: myName, at: Date.now() });
@@ -142,12 +179,13 @@
     });
 
     return {
+      /** Resolves to 'ok' when Realtime accepted the message ('error' or 'timed out' otherwise). */
       send: function (msg) {
         if (msg.t === 'set_language' && msg.language) {
           myLang = msg.language;
           track();
         }
-        sendRaw(msg);
+        return Promise.resolve(sendRaw(msg)).catch(function () { return 'error'; });
       },
       close: function () {
         stopped = true;
@@ -176,18 +214,22 @@
   }
 
   // ─── Shared screens ────────────────────────────────────────────────────────
-  function showEnded(title, body) {
-    setStatus('');
+  function showState(iconName, title, body, ok, action) {
     render([
       el('div', { class: 'center' }, [
-        el('div', { class: 'big-icon', text: '🏮' }),
+        el('div', { class: 'state-icon' + (ok ? ' ok' : '') }, [icon(iconName)]),
         el('h1', { text: title }),
-        el('p', { class: 'lead', text: body }),
+        body ? el('p', { class: 'lead', text: body }) : null,
+        action || null,
       ]),
     ]);
   }
+  function showEnded(title, body, iconName) {
+    setStatus('');
+    showState(iconName || 'check', title, body, !iconName);
+  }
   function showExpired() {
-    showEnded('房间不存在或已过期', 'This room has ended or expired. 请让对方重新生成二维码 · Ask for a new QR code.');
+    showEnded('房间不存在或已过期', 'This room has ended or expired. 请让对方重新生成二维码 · Ask for a new QR code.', 'clock');
   }
   function showCodeEntry() {
     var input = el('input', { class: 'code-input', maxlength: '16', autocomplete: 'off', placeholder: 'ABCD…', 'aria-label': 'Room code' });
@@ -198,18 +240,25 @@
     input.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') go();
     });
-    render([
-      el('div', { class: 'center' }, [
-        el('h1', { text: '输入房间码' }),
-        el('p', { class: 'lead', text: 'Enter the room code shown on the Hao app.' }),
+    showState('scan', '输入房间码', 'Enter the room code shown on the Hao app.', true,
+      el('div', { style: 'display:flex;flex-direction:column;align-items:center;gap:12px;width:100%' }, [
         input,
         el('button', { class: 'btn', text: '加入 · Join', onclick: go }),
-      ]),
-    ]);
+      ]));
+  }
+
+  /** A language list: native name, English name, chevron. */
+  function languageList(languages, onChoose) {
+    return el('div', { class: 'list' }, languages.map(function (l) {
+      return el('button', { class: 'lang', type: 'button', onclick: function () { onChoose(l); } }, [
+        el('span', { class: 'lang-text', dir: l.rtl ? 'rtl' : 'ltr' }, [el('span', { text: l.native }), el('small', { text: l.name })]),
+        icon('chevronRight'),
+      ]);
+    }));
   }
 
   // ─── Mode 1: conversation (the local person) ───────────────────────────────
-  // Flow: pick language → tap Join (unlocks audio + mic) → tap the circle once, speak; recording stops
+  // Flow: pick language → name + Join (unlocks audio + mic) → tap the circle once, speak; recording stops
   // after a short pause (~0.7 s) → Hao answers with its voice. No alerts, whispers or summary on this page.
   var GUEST_LANGUAGES = [
     { code: 'zh', name: 'Mandarin Chinese', native: '简体中文', speech: 'zh-CN', ui: 'zh' },
@@ -226,26 +275,34 @@
 
   var CONV_TEXT = {
     zh: {
-      choose: '选择您的语言', hello: '您好！', intro: '一位外国朋友想和您交流。Hao 会帮你们实时翻译。',
-      consent: '本次对话由AI实时翻译，您的语音将被处理用于翻译。', join: '加入', tap: '点击说话', listening: '正在听…说完会自动发送',
-      thinking: 'Hao 正在思考…', speaking: 'Hao 正在说话…', other: '对方正在说话…', notHeard: '没听清，请再点一次说话',
+      sub: '实时翻译', hello: '您好！', intro: '一位外国朋友想和您聊聊。Hao 会帮你们实时翻译。',
+      consent: '本次对话由 AI 实时翻译，您的语音仅用于翻译。', join: '加入对话', tap: '点击说话', listening: '正在听… 说完会自动发送',
+      sending: '正在发送…', thinking: 'Hao 正在翻译…', speaking: 'Hao 正在说话…', other: '对方正在说话…', notHeard: '没听清，请再点一次说话',
       micTitle: '需要麦克风', micDenied: '无法使用麦克风。请在浏览器设置中允许麦克风权限，然后重试。',
       https: '此链接不是安全连接（HTTPS），浏览器不允许使用麦克风。请让对方使用 HTTPS 链接。', retry: '重试',
       connected: '已连接', reconnecting: '重新连接中…', ended: '对话已结束', thanks: '谢谢您的帮助！', full: '这个二维码已被另一部手机使用。',
-      fullTitle: '对话已有人加入', empty: '点击下面的圆圈，然后说话。', you: '您', hao: 'Hao',
-      nameLabel: '您的称呼', namePlaceholder: '例如：王师傅、李老师', nameHint: '对方会看到这个名字，方便知道是谁说的。', withHost: '正在与 {name} 对话',
+      fullTitle: '对话已有人加入', readyTitle: '准备好了', empty: '点击下方红色按钮说话，说完稍停一下。Hao 会翻译给对方，再把回答读给您听。',
+      you: '您', hao: 'Hao 翻译', replay: '再听一遍', withHost: '正在与 {name} 对话',
+      nameLabel: '您的称呼', namePlaceholder: '例如：王师傅、李老师', nameHint: '对方会看到这个名字，方便知道是谁说的。',
+      aiFailed: '抱歉，刚才没有翻译成功，请再说一次。', busy: '请稍等，Hao 正在说话…', sendFailed: '没有发送成功，请检查网络后再说一次。',
+      tooLong: '说得有点长，请分成短一点的句子。', typeInstead: '打字', closeKeyboard: '收起键盘', typePlaceholder: '输入您想说的话…', send: '发送',
+      changeLanguage: '更换语言',
     },
     en: {
-      choose: 'Choose your language', hello: 'Hello!', intro: 'A traveller would like to talk with you. Hao will interpret in real time.',
-      consent: 'This conversation is translated by AI in real time. Your voice will be processed for translation.', join: 'Join',
-      tap: 'Tap to speak', listening: 'Listening… it sends when you stop', thinking: 'Hao is thinking…', speaking: 'Hao is speaking…',
+      sub: 'Live interpreter', hello: 'Hello!', intro: 'A traveller would like to talk with you. Hao will interpret in real time.',
+      consent: 'This conversation is translated by AI in real time. Your voice is only used for translation.', join: 'Join the conversation',
+      tap: 'Tap to speak', listening: 'Listening… it sends when you stop', sending: 'Sending…', thinking: 'Hao is translating…', speaking: 'Hao is speaking…',
       other: 'The other person is speaking…', notHeard: 'Didn’t catch that, tap and try again', micTitle: 'Microphone needed',
       micDenied: 'Microphone access was denied. Allow it in your browser settings and try again.',
       https: 'This link is not secure (HTTPS), so the browser blocks the microphone. Ask for an HTTPS link.', retry: 'Try again',
       connected: 'Connected', reconnecting: 'Reconnecting…', ended: 'The conversation has ended', thanks: 'Thank you!',
-      full: 'This QR code is already being used on another phone.', fullTitle: 'Someone already joined', empty: 'Tap the circle below and speak.',
-      you: 'You', hao: 'Hao',
-      nameLabel: 'Your name', namePlaceholder: 'e.g. Li Wei', nameHint: 'They will see this name, so the chat shows who said what.', withHost: 'Talking with {name}',
+      full: 'This QR code is already being used on another phone.', fullTitle: 'Someone already joined', readyTitle: 'You’re all set',
+      empty: 'Tap the red button and speak, then pause. Hao translates for them and reads their answer to you.',
+      you: 'You', hao: 'Hao', replay: 'Play again', withHost: 'Talking with {name}',
+      nameLabel: 'Your name', namePlaceholder: 'e.g. Li Wei', nameHint: 'They will see this name, so the chat shows who said what.',
+      aiFailed: 'Sorry, that didn’t translate. Please say it again.', busy: 'One moment, Hao is speaking…', sendFailed: 'That didn’t send. Check your connection and try again.',
+      tooLong: 'That was a bit long. Try shorter sentences.', typeInstead: 'Type', closeKeyboard: 'Hide keyboard', typePlaceholder: 'Type what you want to say…', send: 'Send',
+      changeLanguage: 'Change language',
     },
   };
 
@@ -259,44 +316,49 @@
     var lang = GUEST_LANGUAGES.find(function (l) { return l.code === saved; });
     if (lang) return showJoin(lang);
     setStatus('');
+    setSub('实时翻译 · Live interpreter');
     render([
-      el('h1', { text: '选择您的语言' }),
-      el('p', { class: 'lead', text: 'Choose your language' }),
-      el('div', { class: 'langs' }, GUEST_LANGUAGES.map(function (l) {
-        return el('button', { class: 'lang', onclick: function () { store('hao:conv-lang:' + roomId, l.code); showJoin(l); } }, [
-          el('span', { text: l.native }), el('small', { text: l.name }),
-        ]);
-      })),
+      el('div', {}, [el('h1', { text: '选择您的语言' }), el('p', { class: 'lead', text: 'Choose your language' })]),
+      languageList(GUEST_LANGUAGES, function (l) { store('hao:conv-lang:' + roomId, l.code); showJoin(l); }),
     ]);
   }
 
   function showJoin(lang) {
     var s = CONV_TEXT[lang.ui];
     document.documentElement.lang = lang.speech;
+    setSub(s.sub);
     // Their name labels their messages on the traveller's phone (and in the saved conversation).
     var nameInput = el('input', {
-      class: 'name-input', maxlength: '24', autocomplete: 'nickname', placeholder: s.namePlaceholder, 'aria-label': s.nameLabel,
+      id: 'guest-name', class: 'name-input', maxlength: '24', autocomplete: 'nickname', enterkeyhint: 'go', placeholder: s.namePlaceholder,
     });
     nameInput.value = store('hao:guest-name') || '';
-    var joinBtn = el('button', { class: 'btn', text: s.join, onclick: function () {
+    var joinBtn = el('button', { class: 'btn', type: 'button', onclick: function () {
       var name = cleanName(nameInput.value);
       if (!name) return nameInput.focus();
       store('hao:guest-name', name);
       join(lang, s, name);
-    } });
+    } }, [icon('mic'), s.join]);
     function sync() { joinBtn.disabled = !cleanName(nameInput.value); }
     nameInput.addEventListener('input', sync);
     nameInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') joinBtn.click(); });
     sync();
     render([
-      el('h1', { text: s.hello }),
-      el('p', { class: 'lead', text: s.intro }),
-      el('label', { class: 'name-label', text: s.nameLabel }),
-      nameInput,
-      el('p', { class: 'name-hint', text: s.nameHint }),
-      el('div', { class: 'consent' }, [s.consent]),
+      el('div', { class: 'hero' }, [
+        el('span', { class: 'mark hero-mark', text: '好' }),
+        el('h1', { text: s.hello }),
+        el('p', { class: 'lead', text: s.intro }),
+      ]),
+      el('div', { class: 'field' }, [
+        el('label', { for: 'guest-name', text: s.nameLabel }),
+        nameInput,
+        el('p', { class: 'hint', text: s.nameHint }),
+      ]),
+      el('p', { class: 'consent' }, [icon('shield'), el('span', { text: s.consent })]),
       el('div', { class: 'spacer' }),
-      el('button', { class: 'btn secondary', text: lang.native + ' ▾', onclick: function () { store('hao:conv-lang:' + roomId, ''); startConversation(); } }),
+      el('button', {
+        class: 'lang-chip', type: 'button', 'aria-label': s.changeLanguage,
+        onclick: function () { store('hao:conv-lang:' + roomId, ''); startConversation(); },
+      }, [icon('globe'), el('span', { text: lang.native }), icon('chevronDown')]),
       joinBtn,
     ]);
   }
@@ -326,57 +388,148 @@
   }
 
   function micError(s, text, canRetry, lang, name) {
-    render([
-      el('div', { class: 'center' }, [
-        el('div', { class: 'big-icon', text: '🎙️' }),
-        el('h1', { text: s.micTitle }),
-        el('p', { class: 'lead', text: text }),
-        canRetry ? el('button', { class: 'btn', text: s.retry, onclick: function () { join(lang, s, name); } }) : null,
-      ]),
-    ]);
+    showState('micOff', s.micTitle, text, false,
+      canRetry ? el('button', { class: 'btn', type: 'button', text: s.retry, onclick: function () { join(lang, s, name); } }) : null);
   }
+
+  // Supabase Realtime drops larger messages silently, so long clips are refused here instead.
+  var MAX_AUDIO_BASE64 = 240000;
+  var MAX_RECORD_MS = 15000;
+  // Sent, but the host never started on it (lost message, host offline): free the turn.
+  var SEND_TIMEOUT_MS = 12000;
 
   function runConversation(stream, lang, s, name) {
     var captions = [];
     var phase = { phase: 'idle', by: null };
     var recording = false;
+    var sending = false;
+    var sendTimer = null;
+    var typing = false;
+    var noticeTimer = null;
+    var lastVoice = null;
 
-    var listEl = el('div', { class: 'captions conv', dir: lang.rtl ? 'rtl' : 'ltr' });
-    var statusLine = el('p', { class: 'circle-hint', text: s.tap });
+    var threadEl = el('div', { class: 'thread', dir: lang.rtl ? 'rtl' : 'ltr', role: 'log' });
+    var noticeText = el('span');
+    var noticeEl = el('div', { class: 'notice', role: 'alert', hidden: true }, [icon('alert'), noticeText]);
     var levelRing = el('span', { class: 'ring' });
-    var circle = el('button', { class: 'voice-circle', type: 'button', 'aria-label': s.tap }, [levelRing, el('span', { class: 'mic-icon', text: '🎙️' })]);
+    var circleIcon = el('span', { style: 'display:contents' });
+    var circle = el('button', { class: 'voice-circle', type: 'button', 'aria-label': s.tap }, [levelRing, circleIcon]);
+    var hintEl = el('p', { class: 'circle-hint', text: s.tap });
 
-    var withEl = el('p', { class: 'with-host', hidden: true });
-    render([withEl, listEl, el('div', { class: 'circle-wrap' }, [circle, statusLine])]);
+    var textInput = el('input', { type: 'text', maxlength: '300', enterkeyhint: 'send', placeholder: s.typePlaceholder, dir: lang.rtl ? 'rtl' : 'auto' });
+    var sendBtn = el('button', { class: 'send', type: 'button', 'aria-label': s.send }, [icon('send')]);
+    var composer = el('div', { class: 'composer', hidden: true }, [textInput, sendBtn]);
+    var keyIcon = el('span', { style: 'display:contents' }, [icon('keyboard')]);
+    var keyBtn = el('button', { class: 'side-btn', type: 'button', 'aria-label': s.typeInstead }, [keyIcon]);
+
+    render([
+      threadEl,
+      el('div', { class: 'dock' }, [
+        noticeEl,
+        composer,
+        el('div', { class: 'controls' }, [keyBtn, circle, el('span', { class: 'side-spacer' })]),
+        hintEl,
+      ]),
+    ], true);
+
+    function notice(text) {
+      if (!text) return;
+      noticeText.textContent = text;
+      noticeEl.hidden = false;
+      clearTimeout(noticeTimer);
+      noticeTimer = setTimeout(function () { noticeEl.hidden = true; }, 5000);
+    }
+    function clearNotice() {
+      clearTimeout(noticeTimer);
+      noticeEl.hidden = true;
+    }
 
     function drawCaptions() {
-      listEl.replaceChildren.apply(listEl, captions.length
-        ? captions.map(function (c) {
-            var mine = c.speaker === 'LOCAL';
-            return el('div', { class: 'cap ' + (mine ? 'cap-me' : 'cap-hao') }, [
-              el('small', { text: mine ? (name || s.you) : s.hao }),
-              el('p', { text: c.text }),
-            ]);
-          })
-        : [el('p', { class: 'empty', text: s.empty })]);
-      listEl.scrollTop = listEl.scrollHeight;
+      var nodes = captions.map(function (c) {
+        if (c.speaker === 'LOCAL') {
+          return el('div', { class: 'bubble bubble-me' }, [el('small', { text: name || s.you }), el('p', { text: c.text })]);
+        }
+        return el('div', { class: 'bubble bubble-hao' }, [
+          el('div', { class: 'bubble-head' }, [
+            el('span', { class: 'mini-mark', text: '好' }),
+            el('small', { text: s.hao }),
+            el('button', {
+              class: 'replay', type: 'button', 'aria-label': s.replay,
+              onclick: function () { if (!recording) speakText({ text: c.text, lang: lang.speech }, function () {}); },
+            }, [icon('volume')]),
+          ]),
+          el('p', { text: c.text }),
+        ]);
+      });
+      var working = sending || (phase.phase === 'thinking' && phase.by === 'LOCAL');
+      if (!captions.length && !working) {
+        nodes.push(el('div', { class: 'empty-card' }, [
+          el('div', { class: 'empty-icon' }, [icon('mic')]),
+          el('h2', { text: s.readyTitle }),
+          el('p', { text: s.empty }),
+        ]));
+      }
+      // Hao is working on the guest's words: show it typing in the thread.
+      if (working) {
+        nodes.push(el('div', { class: 'bubble bubble-hao' }, [
+          el('div', { class: 'bubble-head' }, [el('span', { class: 'mini-mark', text: '好' }), el('small', { text: s.hao })]),
+          dots(),
+        ]));
+      }
+      threadEl.replaceChildren.apply(threadEl, nodes);
+      threadEl.scrollTop = threadEl.scrollHeight;
     }
 
     function update() {
       var mine = phase.by === 'LOCAL';
-      var label = recording ? s.listening
-        : phase.phase === 'thinking' ? s.thinking
-        : phase.phase === 'speaking' ? s.speaking
-        : phase.phase === 'listening' && !mine ? s.other
-        : s.tap;
-      statusLine.textContent = label;
-      var locked = !recording && phase.phase !== 'idle';
+      var state = recording ? 'recording'
+        : sending ? 'sending'
+        : phase.phase === 'thinking' ? 'thinking'
+        : phase.phase === 'speaking' ? 'speaking'
+        : phase.phase === 'listening' && !mine ? 'other'
+        : 'idle';
+      hintEl.textContent = { recording: s.listening, sending: s.sending, thinking: s.thinking, speaking: s.speaking, other: s.other, idle: s.tap }[state];
+      var locked = state !== 'idle' && state !== 'recording';
       circle.disabled = locked;
-      circle.classList.toggle('recording', recording);
-      circle.classList.toggle('busy', locked);
+      sendBtn.disabled = locked;
+      circle.className = 'voice-circle' + (state === 'recording' ? ' recording' : locked ? ' busy' : '') + (state === 'speaking' ? ' speaking' : '');
+      circle.setAttribute('aria-label', recording ? s.send : s.tap);
+      circleIcon.replaceChildren(
+        state === 'recording' ? icon('stop')
+          : state === 'sending' || state === 'thinking' ? dots()
+          : state === 'speaking' ? icon('volume')
+          : icon('mic')
+      );
+      drawCaptions();
     }
 
-    // ── Playback of Hao's voice, then tell the server so the other person can talk.
+    // ── Sending a turn to the host, with a watchdog in case it never arrives.
+    function sent() {
+      sending = false;
+      clearTimeout(sendTimer);
+    }
+    function sendTurn(msg) {
+      sending = true;
+      clearNotice();
+      update();
+      clearTimeout(sendTimer);
+      sendTimer = setTimeout(function () {
+        if (!sending) return;
+        sent();
+        conn.send({ t: 'mic', active: false });
+        notice(s.sendFailed);
+        update();
+      }, SEND_TIMEOUT_MS);
+      conn.send(msg).then(function (result) {
+        if (result === 'ok' || !sending) return;
+        sent();
+        conn.send({ t: 'mic', active: false });
+        notice(s.sendFailed);
+        update();
+      });
+    }
+
+    // ── Playback of Hao's voice, then tell the host so the other person can talk.
     function played() { conn.send({ t: 'played' }); }
     function playVoice(msg) {
       var done = false;
@@ -427,6 +580,7 @@
 
     function startRecording() {
       if (recording || circle.disabled) return;
+      clearNotice();
       if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
       if ('speechSynthesis' in window) speechSynthesis.cancel();
       conn.send({ t: 'mic', active: true });
@@ -445,15 +599,23 @@
         levelRing.style.transform = '';
         if (!heard) {
           conn.send({ t: 'mic', active: false });
-          toast(s.notHeard);
+          notice(s.notHeard);
           return update();
         }
         var blob = new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/webm' });
         var reader = new FileReader();
         reader.onloadend = function () {
-          conn.send({ t: 'audio', speaker: 'LOCAL', audio: { data: String(reader.result).split(',')[1] || '', mimeType: blob.type.split(';')[0] } });
+          var data = String(reader.result).split(',')[1] || '';
+          if (data.length > MAX_AUDIO_BASE64) {
+            sending = false;
+            conn.send({ t: 'mic', active: false });
+            notice(s.tooLong);
+            return update();
+          }
+          sendTurn({ t: 'audio', speaker: 'LOCAL', audio: { data: data, mimeType: blob.type.split(';')[0] } });
         };
         reader.readAsDataURL(blob);
+        sending = true; // until the clip is encoded and on its way
         update();
       };
       recorder.start(250);
@@ -463,11 +625,11 @@
         // Learn the room's background level during the first 300 ms.
         if (now - started < 300) { noise = Math.max(noise, rms * 1.5); return; }
         var speaking = rms > Math.max(0.02, noise * 2.2);
-        levelRing.style.transform = 'scale(' + (1 + Math.min(0.5, rms * 6)) + ')';
+        levelRing.style.transform = 'scale(' + (1 + Math.min(0.4, rms * 5)) + ')';
         if (speaking) { heard = true; silentSince = null; }
         else if (silentSince === null) silentSince = now;
         var silentFor = silentSince === null ? 0 : now - silentSince;
-        if ((heard && silentFor >= 700) || (!heard && now - started > 5000) || now - started > 20000) recorder.stop();
+        if ((heard && silentFor >= 700) || (!heard && now - started > 5000) || now - started > MAX_RECORD_MS) recorder.stop();
       }, 50);
     }
 
@@ -476,43 +638,62 @@
       startRecording();
     });
 
+    // ── Typing instead of speaking (noisy places, or when the mic struggles).
+    function sendText() {
+      var text = textInput.value.trim();
+      if (!text || sendBtn.disabled) return;
+      textInput.value = '';
+      if ('speechSynthesis' in window) speechSynthesis.cancel();
+      sendTurn({ t: 'text', text: text });
+    }
+    sendBtn.addEventListener('click', sendText);
+    textInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') sendText(); });
+    keyBtn.addEventListener('click', function () {
+      typing = !typing;
+      composer.hidden = !typing;
+      keyIcon.replaceChildren(icon(typing ? 'close' : 'keyboard'));
+      keyBtn.setAttribute('aria-label', typing ? s.closeKeyboard : s.typeInstead);
+      if (typing) textInput.focus();
+    });
+
     var conn = connect(
       function () { return { room: roomId, role: 'local', pid: participantId(), lang: lang.code, langName: lang.name, name: name }; },
       {
         onStatus: function (online, hostName) {
           setStatus(online ? s.connected : s.reconnecting, !online);
-          if (hostName) {
-            withEl.textContent = s.withHost.replace('{name}', hostName);
-            withEl.hidden = false;
-          }
+          if (hostName) setSub(s.withHost.replace('{name}', hostName));
         },
         onMessage: function (msg) {
           if (msg.t === 'welcome' && msg.snapshot.kind === 'conversation_local') {
             captions = msg.snapshot.captions;
             phase = msg.snapshot.phase;
-            drawCaptions();
           } else if (msg.t === 'conv_caption') {
+            if (msg.caption.speaker === 'LOCAL') sent();
             captions.push(msg.caption);
             captions = captions.slice(-60);
-            drawCaptions();
           } else if (msg.t === 'phase') {
             phase = msg.state;
+            if (phase.phase === 'thinking' || phase.phase === 'speaking') sent();
           } else if (msg.t === 'voice') {
+            if (msg.id === lastVoice) return;
+            lastVoice = msg.id;
             playVoice(msg);
           } else if (msg.t === 'not_heard') {
-            toast(s.notHeard);
+            sent();
+            notice(s.notHeard);
           } else if (msg.t === 'error') {
             if (msg.code === 'room_not_found') return showExpired();
-            if (msg.code === 'room_full') return showEnded(s.fullTitle, s.full);
-            toast(msg.message);
+            if (msg.code === 'room_full') return showEnded(s.fullTitle, s.full, 'users');
+            sent();
+            notice(msg.code === 'ai_failed' ? s.aiFailed : msg.code === 'busy' ? s.busy : msg.message);
           } else if (msg.t === 'ended') {
+            sent();
             return showEnded(s.ended, s.thanks);
           }
           update();
         },
       }
     );
-    drawCaptions();
     update();
   }
 
@@ -555,6 +736,7 @@
   }
 
   function startBroadcast() {
+    setSub('Live captions');
     var saved = store('hao:lang:' + roomId);
     var lang = LANGUAGES.find(function (l) { return l.code === saved; });
     if (lang) return runBroadcast(lang);
@@ -564,18 +746,11 @@
   function chooseLanguage(onChoose) {
     setStatus('');
     render([
-      el('h1', { text: 'Choose your language' }),
-      el('p', { class: 'lead', text: 'Live captions of the tour guide · Sous-titres en direct · Manukuu ya moja kwa moja' }),
-      el(
-        'div',
-        { class: 'langs' },
-        LANGUAGES.map(function (l) {
-          return el('button', { class: 'lang', onclick: function () { store('hao:lang:' + roomId, l.code); onChoose(l); } }, [
-            el('span', { text: l.native }),
-            el('small', { text: l.name }),
-          ]);
-        })
-      ),
+      el('div', {}, [
+        el('h1', { text: 'Choose your language' }),
+        el('p', { class: 'lead', text: 'Live captions of the tour guide · Sous-titres en direct · Manukuu ya moja kwa moja' }),
+      ]),
+      languageList(LANGUAGES, function (l) { store('hao:lang:' + roomId, l.code); onChoose(l); }),
     ]);
   }
 
@@ -597,9 +772,10 @@
     });
 
     var conn;
+    var langName = el('span');
     var langBtn = el('button', {
       class: 'chip',
-      text: lang.native + ' ▾',
+      type: 'button',
       onclick: function () {
         chooseLanguage(function (next) {
           lang = next;
@@ -608,17 +784,18 @@
           runBroadcastView();
         });
       },
-    });
+    }, [icon('globe'), langName, icon('chevronDown')]);
 
     function runBroadcastView() {
       document.documentElement.lang = lang.code;
       listEl.setAttribute('dir', lang.rtl ? 'rtl' : 'ltr');
-      langBtn.textContent = lang.native + ' ▾';
+      langName.textContent = lang.native;
+      langBtn.setAttribute('aria-label', s.language);
       toggleInput.setAttribute('aria-label', s.readAloud);
       render([
         el('div', { class: 'caption-head' }, [langBtn, el('label', { class: 'toggle' }, [toggleInput, el('span', { text: s.readAloud })])]),
         listEl,
-        el('button', { class: 'btn secondary', text: '✋ ' + s.ask, onclick: openQuestion }),
+        el('button', { class: 'btn secondary', type: 'button', onclick: openQuestion }, [icon('question'), s.ask]),
       ]);
       drawCaptions();
       setStatus(online ? s.live : s.reconnecting, !online);
@@ -643,6 +820,7 @@
           area,
           el('button', {
             class: 'btn',
+            type: 'button',
             text: s.send,
             onclick: function () {
               var text = area.value.trim();
@@ -651,7 +829,7 @@
               backdrop.remove();
             },
           }),
-          el('button', { class: 'btn secondary', text: s.cancel, onclick: function () { backdrop.remove(); } }),
+          el('button', { class: 'btn secondary', type: 'button', text: s.cancel, onclick: function () { backdrop.remove(); } }),
         ]),
       ]);
       document.body.appendChild(backdrop);
@@ -683,7 +861,7 @@
             if (msg.code === 'room_not_found') return showExpired();
             toast(msg.message);
           } else if (msg.t === 'ended') {
-            showEnded(s.ended, '🙏');
+            showEnded(s.ended, '');
           }
         },
       }
