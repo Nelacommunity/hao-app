@@ -176,7 +176,9 @@ const TRANSIENT = new Set([429, 500, 502, 503, 504]);
 function toGeminiSchema(schema: JsonSchema): object {
   switch (schema.type) {
     case 'string':
-      return schema.enum ? { type: 'STRING', enum: schema.enum } : { type: 'STRING' };
+      // Gemini rejects "" as an enum value, and dropping it would force a made-up answer where "" means
+      // "not said". Such fields go as plain strings; the prompt lists the values and callers validate them.
+      return schema.enum && !schema.enum.includes('') ? { type: 'STRING', enum: schema.enum } : { type: 'STRING' };
     case 'boolean':
       return { type: 'BOOLEAN' };
     case 'integer':
