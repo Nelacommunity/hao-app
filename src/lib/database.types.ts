@@ -542,6 +542,24 @@ export type Database = {
         };
         Relationships: [];
       };
+      discover_likes: {
+        Row: {
+          user_id: string;
+          item_key: string;
+          created_at: string;
+        };
+        Insert: {
+          user_id?: string;
+          item_key: string;
+          created_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          item_key?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       muted_story_topics: {
         Row: {
           user_id: string;
@@ -693,6 +711,7 @@ export type Database = {
     Views: { [_ in never]: never };
     Functions: {
       delete_account: { Args: Record<PropertyKey, never>; Returns: undefined };
+      discover_like_counts: { Args: { item_keys: string[] }; Returns: { item_key: string; likes: number }[] };
       is_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
       confirm_visit: {
         Args: { visit_id: string; visit_rating?: number | null; visit_tags?: string[] };

@@ -1,11 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type GestureResponderEvent } from 'react-native';
 
 import { PLACE_TYPES, type StoryAction, type StoryType } from '@shared/stories/schema';
 
+import { RAIL_WIDTH } from '@/components/discover-rail';
 import { Radius, Spacing, themed } from '@/constants/theme';
 import type { IconName } from '@/data/places';
 import { tx, useT } from '@/lib/i18n';
@@ -74,12 +75,14 @@ type Props = {
   onSlideChange: (index: number) => void;
   onAction: (action: StoryAction) => void;
   onMenu: () => void;
+  /** The like / save / share / Hao rail on the right; the text panel leaves room for it. */
+  rail?: ReactNode;
 };
 
 const SWIPE_PX = 40;
 
 /** One story, full screen: progress bars, the slide's picture (or colour and icon) and its text on a solid panel. */
-export function StoryView({ story, height, topInset, active, onNextStory, onPrevStory, onSlideChange, onAction, onMenu }: Props) {
+export function StoryView({ story, height, topInset, active, onNextStory, onPrevStory, onSlideChange, onAction, onMenu, rail }: Props) {
   const t = useT();
   const { width } = useWindowDimensions();
   const [index, setIndex] = useState(0);
@@ -207,7 +210,7 @@ export function StoryView({ story, height, topInset, active, onNextStory, onPrev
           </View>
         </View>
 
-        <View style={[styles.panel, { maxHeight: height * 0.62 }]} pointerEvents="box-none">
+        <View style={[styles.panel, { maxHeight: height * 0.62 }, rail ? { right: Spacing.md + RAIL_WIDTH - Spacing.sm } : null]} pointerEvents="box-none">
           <ScrollView bounces={false} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: Spacing.sm }}>
             {/* One element for screen readers; swipe up/down (adjustable) moves between slides. */}
             <View
@@ -260,6 +263,7 @@ export function StoryView({ story, height, topInset, active, onNextStory, onPrev
             )}
           </ScrollView>
         </View>
+        {rail}
       </View>
     </GestureDetector>
   );

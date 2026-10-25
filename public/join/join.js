@@ -404,33 +404,27 @@
     var recording = false;
     var sending = false;
     var sendTimer = null;
-    var typing = false;
     var noticeTimer = null;
     var lastVoice = null;
 
     var threadEl = el('div', { class: 'thread', dir: lang.rtl ? 'rtl' : 'ltr', role: 'log' });
     var noticeText = el('span');
     var noticeEl = el('div', { class: 'notice', role: 'alert', hidden: true }, [icon('alert'), noticeText]);
-    var levelRing = el('span', { class: 'ring' });
-    var circleIcon = el('span', { style: 'display:contents' });
-    var circle = el('button', { class: 'voice-circle', type: 'button', 'aria-label': s.tap }, [levelRing, circleIcon]);
-    var hintEl = el('p', { class: 'circle-hint', text: s.tap });
 
-    var textInput = el('input', { type: 'text', maxlength: '300', enterkeyhint: 'send', placeholder: s.typePlaceholder, dir: lang.rtl ? 'rtl' : 'auto' });
-    var sendBtn = el('button', { class: 'send', type: 'button', 'aria-label': s.send }, [icon('send')]);
-    var composer = el('div', { class: 'composer', hidden: true }, [textInput, sendBtn]);
-    var keyIcon = el('span', { style: 'display:contents' }, [icon('keyboard')]);
-    var keyBtn = el('button', { class: 'side-btn', type: 'button', 'aria-label': s.typeInstead }, [keyIcon]);
+    // Claude-style composer: the text box on top, the hint and the mic (or send) button underneath.
+    var textInput = el('textarea', { rows: '1', maxlength: '300', enterkeyhint: 'send', placeholder: s.typePlaceholder, dir: lang.rtl ? 'rtl' : 'auto', 'aria-label': s.typePlaceholder });
+    var bars = [0.4, 0.7, 1, 0.75, 0.5, 0.9, 0.6, 1, 0.8, 0.45, 0.85, 0.6, 0.95, 0.7, 0.5, 0.8, 0.55, 0.9].map(function (h) {
+      var bar = el('span');
+      bar.dataset.h = h;
+      return bar;
+    });
+    var wave = el('div', { class: 'wave', hidden: true, 'aria-hidden': 'true' }, bars);
+    var hintEl = el('span', { class: 'composer-hint', text: s.tap });
+    var actionIcon = el('span', { style: 'display:contents' });
+    var action = el('button', { class: 'action', type: 'button', 'aria-label': s.tap }, [actionIcon]);
+    var composer = el('div', { class: 'composer' }, [textInput, wave, el('div', { class: 'composer-bar' }, [hintEl, action])]);
 
-    render([
-      threadEl,
-      el('div', { class: 'dock' }, [
-        noticeEl,
-        composer,
-        el('div', { class: 'controls' }, [keyBtn, circle, el('span', { class: 'side-spacer' })]),
-        hintEl,
-      ]),
-    ], true);
+    render([threadEl, el('div', { class: 'dock' }, [noticeEl, composer])], true);
 
     function notice(text) {
       if (!text) return;
@@ -443,38 +437,37 @@
       clearTimeout(noticeTimer);
       noticeEl.hidden = true;
     }
+    function setLevel(value) {
+      bars.forEach(function (bar) { bar.style.height = (6 + Number(bar.dataset.h) * value * 26) + 'px'; });
+    }
 
     function drawCaptions() {
       var nodes = captions.map(function (c) {
         if (c.speaker === 'LOCAL') {
-          return el('div', { class: 'bubble bubble-me' }, [el('small', { text: name || s.you }), el('p', { text: c.text })]);
+          return el('div', { class: 'msg-me' }, [el('p', { text: c.text })]);
         }
-        return el('div', { class: 'bubble bubble-hao' }, [
-          el('div', { class: 'bubble-head' }, [
-            el('span', { class: 'mini-mark', text: '好' }),
-            el('small', { text: s.hao }),
+        // Hao's lines: plain text beside its mark, with a quiet action row (like Claude's replies).
+        return el('div', { class: 'msg-hao' }, [
+          el('div', { class: 'msg-head' }, [el('span', { class: 'mini-mark', text: '好' }), el('small', { text: s.hao })]),
+          el('p', { class: 'msg-text', text: c.text }),
+          el('div', { class: 'msg-actions' }, [
             el('button', {
-              class: 'replay', type: 'button', 'aria-label': s.replay,
+              class: 'msg-action', type: 'button', 'aria-label': s.replay,
               onclick: function () { if (!recording) speakText({ text: c.text, lang: lang.speech }, function () {}); },
-            }, [icon('volume')]),
+            }, [icon('volume'), el('span', { text: s.replay })]),
           ]),
-          el('p', { text: c.text }),
         ]);
       });
       var working = sending || (phase.phase === 'thinking' && phase.by === 'LOCAL');
       if (!captions.length && !working) {
-        nodes.push(el('div', { class: 'empty-card' }, [
-          el('div', { class: 'empty-icon' }, [icon('mic')]),
+        nodes.push(el('div', { class: 'welcome' }, [
+          el('span', { class: 'mark' }, ['好']),
           el('h2', { text: s.readyTitle }),
           el('p', { text: s.empty }),
         ]));
       }
-      // Hao is working on the guest's words: show it typing in the thread.
       if (working) {
-        nodes.push(el('div', { class: 'bubble bubble-hao' }, [
-          el('div', { class: 'bubble-head' }, [el('span', { class: 'mini-mark', text: '好' }), el('small', { text: s.hao })]),
-          dots(),
-        ]));
+        nodes.push(el('div', { class: 'thinking' }, [el('span', { class: 'mini-mark pulse', text: '好' }), el('span', { class: 'shimmer', text: s.thinking })]));
       }
       threadEl.replaceChildren.apply(threadEl, nodes);
       threadEl.scrollTop = threadEl.scrollHeight;
@@ -490,16 +483,20 @@
         : 'idle';
       hintEl.textContent = { recording: s.listening, sending: s.sending, thinking: s.thinking, speaking: s.speaking, other: s.other, idle: s.tap }[state];
       var locked = state !== 'idle' && state !== 'recording';
-      circle.disabled = locked;
-      sendBtn.disabled = locked;
-      circle.className = 'voice-circle' + (state === 'recording' ? ' recording' : locked ? ' busy' : '') + (state === 'speaking' ? ' speaking' : '');
-      circle.setAttribute('aria-label', recording ? s.send : s.tap);
-      circleIcon.replaceChildren(
-        state === 'recording' ? icon('stop')
+      var hasText = !!textInput.value.trim() && !recording;
+      action.disabled = locked;
+      action.className = 'action' + (recording ? ' recording' : '') + (state === 'speaking' ? ' speaking' : '');
+      action.setAttribute('aria-label', hasText ? s.send : recording ? s.send : s.tap);
+      actionIcon.replaceChildren(
+        hasText ? icon('send')
+          : state === 'recording' ? icon('stop')
           : state === 'sending' || state === 'thinking' ? dots()
           : state === 'speaking' ? icon('volume')
           : icon('mic')
       );
+      composer.classList.toggle('recording', recording);
+      textInput.hidden = recording;
+      wave.hidden = !recording;
       drawCaptions();
     }
 
@@ -579,7 +576,7 @@
     }
 
     function startRecording() {
-      if (recording || circle.disabled) return;
+      if (recording || action.disabled) return;
       clearNotice();
       if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
       if ('speechSynthesis' in window) speechSynthesis.cancel();
@@ -596,7 +593,7 @@
       recorder.onstop = function () {
         clearInterval(vadTimer);
         recording = false;
-        levelRing.style.transform = '';
+        setLevel(0);
         if (!heard) {
           conn.send({ t: 'mic', active: false });
           notice(s.notHeard);
@@ -625,7 +622,7 @@
         // Learn the room's background level during the first 300 ms.
         if (now - started < 300) { noise = Math.max(noise, rms * 1.5); return; }
         var speaking = rms > Math.max(0.02, noise * 2.2);
-        levelRing.style.transform = 'scale(' + (1 + Math.min(0.4, rms * 5)) + ')';
+        setLevel(Math.min(1, rms * 8));
         if (speaking) { heard = true; silentSince = null; }
         else if (silentSince === null) silentSince = now;
         var silentFor = silentSince === null ? 0 : now - silentSince;
@@ -633,7 +630,9 @@
       }, 50);
     }
 
-    circle.addEventListener('click', function () {
+    // One button: send what's typed, otherwise start or stop speaking.
+    action.addEventListener('click', function () {
+      if (textInput.value.trim() && !recording) return sendText();
       if (recording) return recorder.stop();
       startRecording();
     });
@@ -641,19 +640,19 @@
     // ── Typing instead of speaking (noisy places, or when the mic struggles).
     function sendText() {
       var text = textInput.value.trim();
-      if (!text || sendBtn.disabled) return;
+      if (!text || action.disabled) return;
       textInput.value = '';
+      autosize();
       if ('speechSynthesis' in window) speechSynthesis.cancel();
       sendTurn({ t: 'text', text: text });
     }
-    sendBtn.addEventListener('click', sendText);
-    textInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') sendText(); });
-    keyBtn.addEventListener('click', function () {
-      typing = !typing;
-      composer.hidden = !typing;
-      keyIcon.replaceChildren(icon(typing ? 'close' : 'keyboard'));
-      keyBtn.setAttribute('aria-label', typing ? s.closeKeyboard : s.typeInstead);
-      if (typing) textInput.focus();
+    function autosize() {
+      textInput.style.height = 'auto';
+      textInput.style.height = Math.min(120, textInput.scrollHeight) + 'px';
+    }
+    textInput.addEventListener('input', function () { autosize(); update(); });
+    textInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
     });
 
     var conn = connect(

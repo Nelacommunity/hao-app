@@ -19,6 +19,8 @@ import {
   soloSchema,
   soloSystemPrompt,
   translateSchema,
+  explainSchema,
+  explainSystemPrompt,
   translateSystemPrompt,
   placeTranslateSchema,
   placeTranslateSystemPrompt,
@@ -467,6 +469,11 @@ export function geminiProvider(config: GeminiConfig): AgentProvider {
         reply: String(out.reply ?? '').slice(0, 800),
         quick_replies: (out.quick_replies ?? []).filter((q) => typeof q === 'string' && q.trim()).slice(0, 4),
       };
+    },
+
+    async explain({ title, facts, language }) {
+      const raw = await generateJson<{ text: string }>(explainSystemPrompt(language), [{ text: `${title}\n\n${facts}` }], explainSchema);
+      return { text: String(raw.text ?? '').trim().slice(0, 1500) };
     },
 
     async transcribe({ audio, expected }) {

@@ -36,10 +36,10 @@ function write(key: string, value: unknown) {
   }
 }
 
-/** Today's feed from the device, if it was already loaded today. */
+/** Today's feed from the device, if it was already loaded today. An empty one is asked for again (stories may have arrived since). */
 export function cachedFeed(): DiscoverFeed | null {
   const feed = read<DiscoverFeed>(FEED_KEY);
-  return feed?.day === chinaDay() ? feed : null;
+  return feed?.day === chinaDay() && feed.stories.length ? feed : null;
 }
 
 /**

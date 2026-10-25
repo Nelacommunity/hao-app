@@ -356,6 +356,8 @@ export interface AgentProvider {
   transcribe(input: { audio: AudioInput; expected: LanguageTarget[] }): Promise<Transcript>;
   /** `onSay` gets say_to_other as soon as it is generated, before the rest of the turn, so it can be spoken early. */
   roomAgentTurn(input: RoomAgentInput, onSay?: (text: string) => void): Promise<RoomAgentTurn>;
+  /** Discover's voice guide: a short spoken explanation of a story, place or phrase. */
+  explain(input: { title: string; facts: string; language: LanguageTarget }): Promise<{ text: string }>;
   /** Text to speech; returns playable audio or null if unavailable. */
   synthesize(input: { text: string; language: LanguageTarget }): Promise<AudioInput | null>;
 }

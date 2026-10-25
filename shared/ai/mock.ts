@@ -139,6 +139,11 @@ export function mockProvider(): AgentProvider {
       return q ? { ...q, updates, done: false } : { reply: 'Thanks! Talk to me from Me any time to change this.', quick_replies: [], updates, done: true };
     },
 
+    async explain({ title }) {
+      await wait(200);
+      return { text: `${title}. This is a mock explanation from Hao: a short spoken story about what it is, why it matters in China, and one tip for your visit.` };
+    },
+
     async summarizeConversation(input) {
       await wait(200);
       const first = input.lines.find((l) => l.speaker === 'USER')?.text ?? '';
