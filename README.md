@@ -116,3 +116,10 @@ Coordinates are converted between GCJ-02 and WGS-84 so pins line up.
 npx tsc --noEmit && npx expo lint
 npm run test:ranking && npm run test:twin && npm run test:stories
 ```
+
+## License
+
+Copyright © 2026 Brown Mafuru (team leader), Alpha Tito, Walter Kennedy, Daniel Verheij and Prince Limu,
+Dalian Neusoft University of Information. Anyone outside the team needs written approval from the team leader to
+clone, use or share the code, and it may not be used commercially without the team's approval. See `LICENSE`
+(English and Chinese). Third-party components keep their own licences.

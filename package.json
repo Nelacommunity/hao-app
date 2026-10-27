@@ -1,6 +1,7 @@
 {
   "name": "hao",
   "version": "1.0.0",
+  "license": "SEE LICENSE IN LICENSE",
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/ui": "~58.0.23",

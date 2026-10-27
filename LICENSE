@@ -1,21 +1,85 @@
-The MIT License (MIT)
+Hao 好 Licence (Team Approval, Non-Commercial)
 
-Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)
+Copyright (c) 2026 Brown Mafuru (team leader), Alpha Tito, Walter Kennedy, Daniel Verheij and Prince Limu,
+Dalian Neusoft University of Information ("the Team"). All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This licence covers the Hao source code, documentation, designs and other materials in this repository
+("the Work"), except the third-party components listed at the end.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Team members
+   Members of the Team may use, copy, modify and distribute the Work for the purposes of the project.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+2. Everyone else: approval of the team leader
+   Any other person or organisation may clone, copy, use, modify or distribute the Work, in whole or in part,
+   only with prior written approval from the team leader, Brown Mafuru. Approval may be limited in scope or
+   time, and may be withdrawn for future use if its conditions are not met.
+
+3. No commercial use without the Team's approval
+   No one, including approved users, may use the Work or any work based on it for commercial purposes without
+   prior written approval from the Team. Commercial purposes include selling the Work, offering it as a paid
+   product or service, using it in a product or service that earns revenue, and using it for advertising or
+   other commercial advantage.
+
+4. Credit
+   Any approved use must keep this licence and credit "Hao 好, by Brown Mafuru, Alpha Tito, Walter Kennedy,
+   Daniel Verheij and Prince Limu (Dalian Neusoft University of Information)".
+
+5. Competition review
+   Organisers and judges of competitions the Team has entered may view, run and evaluate the Work for judging.
+
+6. No warranty
+   The Work is provided "as is", without warranty of any kind. The Team is not liable for any claim, damages
+   or other liability arising from the Work or its use.
+
+To ask for approval, contact the team leader, Brown Mafuru.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Hao 好 许可协议（团队授权、非商业）
+
+版权所有 (c) 2026 Brown Mafuru（队长）、Alpha Tito、Walter Kennedy、Daniel Verheij、Prince Limu，
+大连东软信息学院（以下简称“团队”）。保留所有权利。
+
+本协议适用于本仓库中的 Hao 源代码、文档、设计及其他材料（以下简称“作品”），文末列出的第三方组件除外。
+
+1. 团队成员：团队成员可为本项目之目的使用、复制、修改和分发作品。
+2. 其他任何人：须经队长同意。团队以外的任何个人或组织，须事先获得队长 Brown Mafuru 的书面同意，方可克隆、复制、
+   使用、修改或分发作品的全部或部分。该同意可限定范围或期限；如未遵守其条件，可撤回对今后使用的同意。
+3. 未经团队同意不得用于商业目的：任何人（包括已获同意的使用者）未经团队事先书面同意，不得将作品或基于作品的衍生作品
+   用于商业目的，包括出售作品、作为付费产品或服务提供、用于产生收入的产品或服务，以及用于广告或其他商业利益。
+4. 署名：任何经同意的使用须保留本协议，并注明“Hao 好，作者 Brown Mafuru、Alpha Tito、Walter Kennedy、
+   Daniel Verheij、Prince Limu（大连东软信息学院）”。
+5. 参赛评审：团队参加的比赛的组织方与评委，可为评审目的查看、运行和评估作品。
+6. 免责声明：作品按“原样”提供，不附带任何形式的保证。团队不对因作品或其使用而产生的任何索赔、损害或其他责任负责。
+
+如需申请授权，请联系队长 Brown Mafuru。若中英文版本存在不一致，以中文版本为准。
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Third-party components / 第三方组件
+
+The Work uses open-source software under its own licences, which this licence does not change. These include
+Expo and React Native (MIT), Supabase (MIT / Apache-2.0), Leaflet (BSD-2-Clause, bundled in
+src/components/map/leaflet-assets.generated.ts) and Zod (MIT); see package.json and node_modules for the full
+list. The project was started from Expo's template, whose remaining parts are under this licence:
+
+  The MIT License (MIT)
+  Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+  documentation files (the "Software"), to deal in the Software without restriction, including without
+  limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+  Software, and to permit persons to whom the Software is furnished to do so, subject to the following
+  conditions:
+
+  The above copyright notice and this permission notice shall be included in all copies or substantial
+  portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+  TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+  THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+  CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+  DEALINGS IN THE SOFTWARE.
+
+Data used by the app (AMap, Mapbox, Wikipedia under CC BY-SA, Wikimedia Commons public-domain images) remains
+under its providers' terms.
