@@ -111,15 +111,21 @@ const stripFences = (text: string) => text.trim().replace(/^```(?:json)?\s*/i, '
 /** HTTP statuses worth retrying: rate limited, or the model is briefly unavailable. */
 export const TRANSIENT = new Set([429, 500, 502, 503, 504]);
 
-/** Sends a request, retrying twice on rate limits and "model overloaded", which are usually gone a moment later. */
+/**
+ * Sends a request, retrying twice on rate limits, "model overloaded" and dropped connections (ECONNRESET and
+ * the like, common on long-distance links), which are usually gone a moment later.
+ */
 export async function fetchWithRetry(label: string, send: () => Promise<Response>) {
-  let res = await send();
+  const attempt = () => send().catch((e: unknown) => e as Error);
+  let res = await attempt();
   for (const wait of [700, 1500]) {
-    if (!TRANSIENT.has(res.status)) break;
-    console.warn(`[ai] ${label} returned ${res.status}; retrying in ${wait}ms`);
+    if (res instanceof Response && !TRANSIENT.has(res.status)) break;
+    const why = res instanceof Response ? res.status : (res as { cause?: { code?: string } }).cause?.code ?? res.message;
+    console.warn(`[ai] ${label} failed (${why}); retrying in ${wait}ms`);
     await new Promise((r) => setTimeout(r, wait));
-    res = await send();
+    res = await attempt();
   }
+  if (!(res instanceof Response)) throw new ProviderError(`${label}: ${res.message}`, 503);
   return res;
 }
 
@@ -161,6 +167,15 @@ export function completedField(partialJson: string, field: string): string | nul
   }
 }
 
+const NETWORK_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ECONNREFUSED', 'EAI_AGAIN', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT']);
+
+/** A dropped or failed connection (Node's fetch puts the socket error in `cause`), as opposed to a bad reply. */
+function isNetworkError(e: unknown): boolean {
+  const err = e as { code?: string; cause?: { code?: string }; name?: string; message?: string } | null;
+  if (!err) return false;
+  return NETWORK_CODES.has(err.code ?? '') || NETWORK_CODES.has(err.cause?.code ?? '') || (err.name === 'TypeError' && err.message === 'fetch failed');
+}
+
 // Browsers record iOS audio as audio/mp4; Qwen knows the same AAC container as m4a.
 export const normalizeMime = (mime: string) => {
   const base = mime.split(';')[0].trim().toLowerCase();
@@ -194,6 +209,8 @@ export function agentProvider(backend: ProviderBackend): AgentProvider {
     try {
       return await generateOnce<T>(system, parts, schema, tier, validate, onText);
     } catch (e) {
+      // The connection dropped while the reply was being read: ask again once.
+      if (isNetworkError(e)) return generateOnce<T>(system, parts, schema, tier, validate);
       if (!(e instanceof ProviderError) || e.status !== undefined) throw e;
       // Invalid or off-schema JSON: retry once with a reminder.
       return generateOnce<T>(system, [...parts, { text: 'Your previous reply was not valid JSON for the schema. Reply with the JSON object only.' }], schema, tier, validate);

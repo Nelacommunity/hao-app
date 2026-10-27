@@ -1,7 +1,86 @@
-<div style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; color: #1b1a1f;">
-  <div style="width: 48px; height: 48px; border-radius: 14px; background: #d7263d; color: #f2b33d; font-size: 28px; font-weight: 900; text-align: center; line-height: 48px;">好</div>
-  <h1 style="font-size: 24px; margin: 24px 0 8px;">Welcome to Hao</h1>
-  <p style="font-size: 16px; line-height: 24px; color: #5e5b66; margin: 0 0 24px;">Enter this code in the app to verify your email:</p>
-  <div style="font-size: 36px; font-weight: 800; letter-spacing: 10px; background: #fff9f3; border: 1px solid #ece7e1; border-radius: 16px; padding: 20px; text-align: center;">{{ .Token }}</div>
-  <p style="font-size: 13px; color: #9a97a3; margin-top: 24px;">The code expires in 1 hour. If you didn’t create a Hao account, you can ignore this email.</p>
-</div>
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
+  <title>Your Hao verification code</title>
+  <style>
+    body { margin: 0; padding: 0; }
+    .code { font-family: 'SF Mono', Menlo, Consolas, 'Roboto Mono', monospace; }
+    @media (max-width: 520px) {
+      .card { padding: 28px 22px !important; }
+      .code { font-size: 34px !important; letter-spacing: 8px !important; }
+    }
+    @media (prefers-color-scheme: dark) {
+      .bg { background: #111111 !important; }
+      .card { background: #1c1b1f !important; border-color: #2c2a30 !important; }
+      .ink { color: #e9e9eb !important; }
+      .soft { color: #a3a3a8 !important; }
+      .codebox { background: #26221a !important; border-color: #5a4720 !important; }
+      .code { color: #f2b33d !important; }
+      .note { background: #232126 !important; }
+    }
+  </style>
+</head>
+<body class="bg" style="margin: 0; padding: 0; background: #fff9f3;">
+  <!-- Preview line in the inbox list. -->
+  <div style="display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent;">Your Hao code is {{ .Token }}. Enter it in the app to finish creating your account.&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;</div>
+  <table role="presentation" class="bg" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#fff9f3" style="background: #fff9f3;">
+    <tr>
+      <td align="center" style="padding: 32px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 480px;">
+          <!-- Header -->
+          <tr>
+            <td bgcolor="#d7263d" style="background: #d7263d; background-image: linear-gradient(135deg, #d7263d 0%, #a3172b 100%); border-radius: 20px 20px 0 0; padding: 26px 32px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td width="44" height="44" align="center" valign="middle" bgcolor="#ffffff" style="width: 44px; height: 44px; background: #ffffff; border-radius: 12px; font-family: 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif; font-size: 26px; font-weight: 900; line-height: 44px; color: #d7263d;">好</td>
+                  <td style="padding-left: 12px; font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+                    <div style="font-size: 20px; font-weight: 800; color: #ffffff; letter-spacing: 0.3px;">Hao</div>
+                    <div style="font-size: 13px; color: #fbd9de;">Your companion in China</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Card -->
+          <tr>
+            <td class="card" bgcolor="#ffffff" style="background: #ffffff; border: 1px solid #ece7e1; border-top: 0; border-radius: 0 0 20px 20px; padding: 36px 32px; font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+              <h1 class="ink" style="margin: 0 0 10px; font-size: 24px; line-height: 30px; font-weight: 800; color: #1b1a1f;">Welcome to Hao 👋</h1>
+              <p class="soft" style="margin: 0 0 26px; font-size: 16px; line-height: 24px; color: #5e5b66;">You’re one step away. Enter this code in the app to verify <strong class="ink" style="color: #1b1a1f;">{{ .Email }}</strong> and finish creating your account.</p>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td class="codebox" align="center" bgcolor="#fef4de" style="background: #fef4de; border: 1px dashed #e8c06a; border-radius: 16px; padding: 22px 12px;">
+                    <div class="soft" style="font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #a26a00; margin-bottom: 8px;">Your verification code</div>
+                    <div class="code" style="font-family: 'SF Mono', Menlo, Consolas, 'Roboto Mono', monospace; font-size: 40px; line-height: 48px; font-weight: 800; letter-spacing: 12px; color: #1b1a1f; padding-left: 12px;">{{ .Token }}</div>
+                  </td>
+                </tr>
+              </table>
+
+              <p class="soft" style="margin: 22px 0 0; font-size: 14px; line-height: 21px; color: #5e5b66;">The code works for 1 hour. If it has expired, tap <strong>Resend code</strong> in the app.</p>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 26px;">
+                <tr>
+                  <td class="note" bgcolor="#faf6f1" style="background: #faf6f1; border-radius: 12px; padding: 14px 16px; font-size: 13px; line-height: 19px; color: #7a7682;">
+                    <span class="soft">&#128274; Hao will never ask you for this code by phone, chat or email. Don’t share it with anyone.</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding: 22px 16px 0; font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 12px; line-height: 18px; color: #9a97a3;">
+              Didn’t sign up for Hao? You can safely ignore this email: no account is created without the code.<br>
+              Hao · 好 · Travel and live in China with confidence
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

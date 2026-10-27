@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useCanGoBack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { forwardRef, useState } from 'react';
 import {
@@ -46,6 +46,8 @@ export function AuthScreen({
   showBack?: boolean;
 }) {
   const t = useT();
+  // The hook, not router.canGoBack(): reading navigation state during render warns and can be stale.
+  const canGoBack = useCanGoBack();
   return (
     <LinearGradient colors={[Colors.red, Colors.redDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }}>
       <StatusBar style="light" />
@@ -54,7 +56,7 @@ export function AuthScreen({
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
             <View style={styles.topRow}>
-              {showBack && router.canGoBack() ? (
+              {showBack && canGoBack ? (
                 <Pressable onPress={() => router.back()} hitSlop={10} style={styles.back} accessibilityLabel={t('Go back')}>
                   <Ionicons name="chevron-back" size={22} color="#fff" />
                 </Pressable>
