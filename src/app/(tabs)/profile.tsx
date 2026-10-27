@@ -330,7 +330,14 @@ export default function ProfileScreen() {
 
         <Text style={styles.sectionTitle}>{t('Account')}</Text>
         <View style={styles.card}>
-          <Pressable onPress={signOut} style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}>
+          <Pressable onPress={() => router.push('/change-password')} style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}>
+            <View style={[styles.rowIcon, { backgroundColor: Colors.paper }]}>
+              <Ionicons name="key-outline" size={18} color={Colors.ink} />
+            </View>
+            <Text style={[styles.rowLabel, { flex: 1 }]}>{t('Change password')}</Text>
+            <Ionicons name="chevron-forward" size={16} color={Colors.muted} />
+          </Pressable>
+          <Pressable onPress={signOut} style={({ pressed }) => [styles.row, styles.rowDivider, pressed && { opacity: 0.7 }]}>
             <View style={[styles.rowIcon, { backgroundColor: Colors.paper }]}>
               <Ionicons name="log-out-outline" size={18} color={Colors.ink} />
             </View>

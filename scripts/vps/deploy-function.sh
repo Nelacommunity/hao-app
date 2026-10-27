@@ -10,7 +10,7 @@
 # VPS's docker-compose.yml is needed.
 # Secrets (QWEN_API_KEY, AMAP_KEY, …) live in the VPS's .env and the functions service's environment.
 #
-# Needs VPS_SSH and VPS_DOCKER_DIR in .env.vps.local (see scripts/vps/vps.env.example), and ssh + rsync.
+# Needs VPS_SSH and VPS_DOCKER_DIR in .vps.env.local (see scripts/vps/vps.env.example), and ssh + rsync.
 # VPS_FUNCTIONS_SERVICE names the compose service (default: functions, as in Supabase's docker-compose.yml).
 # Under Coolify, set VPS_FUNCTIONS_CONTAINER instead (`docker ps` shows it, e.g. functions-<uuid>): the
 # container is then restarted directly, leaving the compose project to Coolify.
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-ENV_FILE="${ENV_FILE:-$ROOT/.env.vps.local}"
+ENV_FILE="${ENV_FILE:-$ROOT/.vps.env.local}"
 [ -f "$ENV_FILE" ] || { echo "Missing $ENV_FILE (copy scripts/vps/vps.env.example)"; exit 1; }
 set -a
 # shellcheck disable=SC1090

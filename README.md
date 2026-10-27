@@ -47,7 +47,7 @@ npm start
 - `src/lib/auth.tsx` — `AuthProvider` / `useAuth()` (session, profile, sign out) and `useLanguagePreference()`.
 - `src/app/_layout.tsx` — `Stack.Protected` guards: signed-out users see landing, onboarding and `(auth)`;
   signed-in users see the tabs. The splash screen stays up until the stored session loads.
-- `(auth)/sign-up` → `verify` (6-digit code) · `sign-in` · `forgot-password` → `verify` → `update-password`.
+- `(auth)/sign-up` → `verify` (6-digit code) · `sign-in` · `forgot-password` → `verify` → `update-password` · Profile → `change-password`.
 - Profile tab: edit name, language (saved to the profile), saved places, sign out, **delete account**
   (required by the App Store and Google Play).
 

@@ -65,6 +65,7 @@ function RootNavigator() {
         <Stack.Screen name="memories" />
         <Stack.Screen name="admin-stories" />
         <Stack.Screen name="twin" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="change-password" />
       </Stack.Protected>
 
       <Stack.Protected guard={signedIn && resettingPassword}>

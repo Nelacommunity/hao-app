@@ -9,11 +9,11 @@
 # the change is undone if a fresh key login fails afterwards. Firewall: ufw lets in 22, 80 and 443.
 # Ports published by Docker skip ufw over IPv4, so those are closed in ufw's DOCKER-USER rules instead.
 #
-# Needs VPS_SSH in .env.vps.local (see scripts/vps/vps.env.example).
+# Needs VPS_SSH in .vps.env.local (see scripts/vps/vps.env.example).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-ENV_FILE="${ENV_FILE:-$ROOT/.env.vps.local}"
+ENV_FILE="${ENV_FILE:-$ROOT/.vps.env.local}"
 [ -f "$ENV_FILE" ] || { echo "Missing $ENV_FILE (copy scripts/vps/vps.env.example)"; exit 1; }
 set -a
 # shellcheck disable=SC1090

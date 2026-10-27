@@ -3,7 +3,7 @@
 # auth users with their passwords, migration history), Vault secrets, cron jobs, Storage files, and links
 # to stored files. Follows supabase.com/docs/guides/platform/migrating-within-supabase/backup-restore.
 #
-#   cp scripts/vps/vps.env.example .env.vps.local     # fill it in (git-ignored)
+#   cp scripts/vps/vps.env.example .vps.env.local     # fill it in (git-ignored)
 #   scripts/vps/migrate-to-vps.sh all                 # or one step: dump | restore | post | storage | verify
 #
 # Needs Docker running (the Supabase CLI and psql run in containers) and Node (for the Storage copy).
@@ -11,7 +11,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-ENV_FILE="${ENV_FILE:-$ROOT/.env.vps.local}"
+ENV_FILE="${ENV_FILE:-$ROOT/.vps.env.local}"
 [ -f "$ENV_FILE" ] || { echo "Missing $ENV_FILE (copy scripts/vps/vps.env.example)"; exit 1; }
 set -a
 # shellcheck disable=SC1090

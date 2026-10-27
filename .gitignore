@@ -44,6 +44,8 @@ example
 
 # secrets
 .env
+# Settings for scripts/vps (not .env.*: Expo's Metro would try to bundle any root .env.* file)
+.vps.env.local
 
 # Supabase → VPS migration: dumps hold user data and secrets
 supabase/.vps-backup/

@@ -2,7 +2,7 @@
 // each side's Storage API with its service key. The SQL dump only has the files' rows, not the files.
 // Safe to run again: files already on the VPS with the same size are skipped.
 //
-//   node --env-file=.env.vps.local scripts/vps/copy-storage.mjs
+//   node --env-file=.vps.env.local scripts/vps/copy-storage.mjs
 //
 // Needs OLD_API_URL, OLD_SERVICE_KEY, NEW_API_URL, NEW_SERVICE_KEY (see scripts/vps/vps.env.example).
 import { createClient } from '@supabase/supabase-js';
