@@ -3,12 +3,14 @@ import { useEffect } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { cancelAnimation, FadeIn, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { ChatColors } from '@/components/chat-ui';
+import { Colors, Radius, Spacing, themed } from '@/constants/theme';
 import { tx, useT } from '@/lib/i18n';
 
-export type ChatMode = 'interpret' | 'guide' | 'memory';
+export type ChatMode = 'places' | 'interpret' | 'guide' | 'memory';
 
-export const ChatModes: Record<ChatMode, { label: string; icon: 'chatbubbles' | 'compass' | 'sparkles'; placeholder: string }> = {
+export const ChatModes: Record<ChatMode, { label: string; icon: 'location' | 'chatbubbles' | 'compass' | 'sparkles'; placeholder: string }> = {
+  places: { label: tx('Places'), icon: 'location', placeholder: tx('Ask for food, sights, anything nearby…') },
   interpret: { label: tx('Interpret'), icon: 'chatbubbles', placeholder: tx('Tell Hao what to say…') },
   guide: { label: tx('Guide'), icon: 'compass', placeholder: tx('Ask about WeChat, trains, payments…') },
   memory: { label: tx('Memory'), icon: 'sparkles', placeholder: tx('Ask what you heard, saw or planned…') },
@@ -23,6 +25,8 @@ type Props = {
   onChangeText: (text: string) => void;
   onSend: () => void;
   onOpenMenu: () => void;
+  /** Shows a "Discover" chip that opens today's stories. */
+  onOpenDiscover?: () => void;
   busy: boolean;
   /** Voice input; omit to hide the mic (e.g. Guide mode). */
   voice?: {
@@ -37,7 +41,7 @@ type Props = {
   };
 };
 
-export function ChatComposer({ mode, value, onChangeText, onSend, onOpenMenu, busy, voice }: Props) {
+export function ChatComposer({ mode, value, onChangeText, onSend, onOpenMenu, onOpenDiscover, busy, voice }: Props) {
   const t = useT();
   const hasText = value.trim().length > 0;
 
@@ -50,7 +54,7 @@ export function ChatComposer({ mode, value, onChangeText, onSend, onOpenMenu, bu
           value={value}
           onChangeText={onChangeText}
           placeholder={t(ChatModes[mode].placeholder)}
-          placeholderTextColor={Colors.muted}
+          placeholderTextColor={ChatColors.faint}
           style={styles.input}
           multiline
           editable={!busy}
@@ -65,16 +69,26 @@ export function ChatComposer({ mode, value, onChangeText, onSend, onOpenMenu, bu
             style={({ pressed }) => [styles.plus, pressed && styles.pressed]}
             accessibilityRole="button"
             accessibilityLabel={t('Choose mode')}>
-            <Ionicons name="add" size={22} color={Colors.ink} />
+            <Ionicons name="add" size={24} color={ChatColors.text} />
           </Pressable>
           <Pressable
             onPress={onOpenMenu}
             style={({ pressed }) => [styles.modeChip, pressed && styles.pressed]}
             accessibilityRole="button"
             accessibilityLabel={t('Mode: {mode}. Change mode', { mode: t(ChatModes[mode].label) })}>
-            <Ionicons name={ChatModes[mode].icon} size={14} color={Colors.red} />
+            <Ionicons name={`${ChatModes[mode].icon}-outline`} size={15} color={ChatColors.text} />
             <Text style={styles.modeChipText}>{t(ChatModes[mode].label)}</Text>
           </Pressable>
+          {onOpenDiscover ? (
+            <Pressable
+              onPress={onOpenDiscover}
+              style={({ pressed }) => [styles.modeChip, pressed && styles.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel={t('Discover: today’s stories')}>
+              <Ionicons name="play-circle-outline" size={15} color={ChatColors.text} />
+              <Text style={styles.modeChipText}>{t('Discover')}</Text>
+            </Pressable>
+          ) : null}
           <View style={{ flex: 1 }} />
           {hasText || !voice ? (
             <Pressable
@@ -83,7 +97,7 @@ export function ChatComposer({ mode, value, onChangeText, onSend, onOpenMenu, bu
               style={({ pressed }) => [styles.action, (!hasText || busy) && styles.actionDisabled, pressed && styles.pressed]}
               accessibilityRole="button"
               accessibilityLabel={t('Send')}>
-              {busy ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="arrow-up" size={20} color="#fff" />}
+              {busy ? <ActivityIndicator size="small" color={ChatColors.soft} /> : <Ionicons name="arrow-up" size={20} color={hasText ? '#fff' : ChatColors.faint} />}
             </Pressable>
           ) : (
             <Pressable
@@ -155,46 +169,39 @@ function PulseDot({ color }: { color: string }) {
   return <Animated.View style={[styles.dot, { backgroundColor: color }, style]} />;
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   pressed: { opacity: 0.8, transform: [{ scale: 0.96 }] },
-  dock: { paddingHorizontal: Spacing.md, paddingTop: Spacing.sm, paddingBottom: Spacing.md, backgroundColor: Colors.paper },
+  dock: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 10, backgroundColor: ChatColors.background },
   box: {
-    backgroundColor: Colors.card,
-    borderRadius: 26,
+    backgroundColor: ChatColors.surface,
+    borderRadius: 28,
     borderWidth: 1,
-    borderColor: Colors.line,
-    paddingTop: 10,
+    borderColor: ChatColors.border,
+    paddingTop: 12,
     paddingBottom: 8,
     paddingHorizontal: 8,
-    shadowColor: '#3B1A10',
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
-  input: { maxHeight: 140, minHeight: 28, paddingHorizontal: 10, paddingVertical: 4, fontSize: 16, lineHeight: 22, color: Colors.ink },
-  toolbar: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
-  plus: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.line,
-  },
+  input: { maxHeight: 160, minHeight: 26, paddingHorizontal: 10, paddingVertical: 2, fontSize: 16, lineHeight: 22, color: ChatColors.text },
+  toolbar: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
+  plus: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   modeChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    height: 36,
+    gap: 6,
+    height: 34,
     paddingHorizontal: 12,
-    borderRadius: 18,
-    backgroundColor: Colors.redSoft,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: ChatColors.border,
   },
-  modeChipText: { fontSize: 14, fontWeight: '700', color: Colors.red },
-  action: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.red, alignItems: 'center', justifyContent: 'center' },
-  actionDisabled: { backgroundColor: Colors.line },
+  modeChipText: { fontSize: 14, fontWeight: '500', color: ChatColors.text },
+  action: { width: 36, height: 36, borderRadius: 18, backgroundColor: ChatColors.accent, alignItems: 'center', justifyContent: 'center' },
+  actionDisabled: { backgroundColor: ChatColors.userBubble },
   recorder: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -222,4 +229,4 @@ const styles = StyleSheet.create({
   wave: { flexDirection: 'row', alignItems: 'center', gap: 3, height: 26 },
   bar: { flex: 1, borderRadius: 2, opacity: 0.85 },
   sendRecording: { width: 48, height: 48, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
-});
+}));

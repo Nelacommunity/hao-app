@@ -197,7 +197,7 @@ password_requirements = ""
 
 [auth.rate_limit]
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
-email_sent = 2
+email_sent = 60
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
 sms_sent = 30
 # Number of anonymous sign-ins that can be made per hour per IP address. Requires enable_anonymous_sign_ins = true.
@@ -234,15 +234,16 @@ otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
 
-# Use a production-ready SMTP server
-# [auth.email.smtp]
-# enabled = true
-# host = "smtp.sendgrid.net"
-# port = 587
-# user = "apikey"
-# pass = "env(SENDGRID_API_KEY)"
-# admin_email = "admin@email.com"
-# sender_name = "Admin"
+# Auth emails (the sign-up verification code and password reset) are sent by Resend over SMTP.
+# RESEND_API_KEY and AUTH_EMAIL_FROM (an address on a domain verified in Resend) come from supabase/.env.
+[auth.email.smtp]
+enabled = true
+host = "smtp.resend.com"
+port = 465
+user = "resend"
+pass = "env(RESEND_API_KEY)"
+admin_email = "env(AUTH_EMAIL_FROM)"
+sender_name = "Hao"
 
 # Hao verifies with 6-digit codes ({{ .Token }}) instead of links, so no deep-link setup is needed.
 [auth.email.template.confirmation]
@@ -394,6 +395,10 @@ deno_version = 2
 
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
+
+# Nightly Discover stories. It checks the caller itself (service role key from pg_cron, or an admin's token).
+[functions.generate-stories]
+verify_jwt = false
 
 [analytics]
 enabled = true

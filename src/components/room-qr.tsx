@@ -1,7 +1,7 @@
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing, themed } from '@/constants/theme';
 import { useT } from '@/lib/i18n';
 
 type Props = { joinUrl: string; roomId: string; caption: string; captionZh: string };
@@ -18,7 +18,8 @@ export function RoomQr({ joinUrl, roomId, caption, captionZh }: Props) {
       <Text style={styles.zh}>{captionZh}</Text>
       <Text style={styles.caption}>{caption}</Text>
       <View style={styles.qr} accessible accessibilityLabel={t('QR code to join room {roomId}', { roomId })}>
-        <QRCode value={joinUrl} size={size} color={Colors.ink} backgroundColor="#fff" ecl="M" />
+        {/* Always dark on white, whatever the theme, so every scanner reads it. */}
+        <QRCode value={joinUrl} size={size} color="#111111" backgroundColor="#fff" ecl="M" />
       </View>
       <Text style={styles.codeLabel}>{t('Room code')} · 房间码</Text>
       <Text style={styles.code} selectable>
@@ -31,7 +32,7 @@ export function RoomQr({ joinUrl, roomId, caption, captionZh }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   card: {
     backgroundColor: Colors.card,
     borderRadius: 28,
@@ -49,4 +50,4 @@ const styles = StyleSheet.create({
   codeLabel: { fontSize: 11, fontWeight: '800', color: Colors.muted, letterSpacing: 1, textTransform: 'uppercase' },
   code: { fontSize: 26, fontWeight: '900', color: Colors.red, letterSpacing: 3, marginTop: 2 },
   url: { fontSize: 11, color: Colors.muted, marginTop: Spacing.sm, maxWidth: '100%' },
-});
+}));

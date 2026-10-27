@@ -37,6 +37,8 @@ export function setTravellerLanguage(language: Language) {
   listeners.forEach((listener) => listener());
 }
 
+export const getTravellerLanguage = () => current;
+
 export function useTravellerLanguage() {
   return useSyncExternalStore(subscribe, () => current, () => current);
 }

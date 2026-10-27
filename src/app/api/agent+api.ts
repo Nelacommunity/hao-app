@@ -1,8 +1,8 @@
 import type { AgentRequest } from '@/lib/agent';
-import type { NewMemory } from '@shared/ai/types';
+import type { NewMemory, ToolUse } from '@shared/ai/types';
 
 import { authenticate, providerOrError } from '@/lib/server/api';
-import { memoryContext, remember } from '@/lib/server/memory';
+import { memoryContext, remember, toolUses } from '@/lib/server/memory';
 
 export async function POST(request: Request) {
   const user = await authenticate(request);
@@ -37,8 +37,8 @@ export async function POST(request: Request) {
       memories: memory.text,
     });
 
+    const toSave: NewMemory[] = memory.db ? [...turn.memories] : [];
     if (memory.db) {
-      const toSave: NewMemory[] = [...turn.memories];
       // Always keep what a local said, so "what did they say about…?" can be answered later.
       if (body.speaker === 'local' && turn.heard && !toSave.some((m) => m.kind === 'said')) {
         const meaning = turn.heard_translation ? `${turn.heard_translation} (“${turn.heard}”)` : turn.heard;
@@ -46,7 +46,11 @@ export async function POST(request: Request) {
       }
       await remember(memory.db, toSave, 'interpret');
     }
-    return Response.json(turn);
+    const tools: ToolUse[] = [];
+    if (body.audio?.data && turn.heard) tools.push({ tool: 'listen', text: turn.heard });
+    tools.push(...toolUses({ sources: turn.sources, recalled: memory.count, saved: toSave }));
+    if (turn.say_to_local_zh) tools.push({ tool: 'speak', text: turn.say_to_local_zh });
+    return Response.json({ ...turn, tools });
   } catch (e) {
     console.error('Agent provider error', e);
     return Response.json({ error: 'The agent could not respond. Try again.' }, { status: 502 });

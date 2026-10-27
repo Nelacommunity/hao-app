@@ -1,14 +1,14 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { AudioInput } from '@shared/ai/types';
 
 import { RoomQr } from '@/components/room-qr';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { Colors, Radius, Shadow, Spacing, themed } from '@/constants/theme';
 import { forgetHostedRoom, getHostedRoom } from '@/lib/rooms/session';
 import { useBroadcastHost } from '@/lib/rooms/use-broadcast-host';
 import { useChunkedRecorder } from '@/lib/rooms/use-chunked-recorder';
@@ -22,7 +22,7 @@ export default function BroadcastRoom() {
   const { connected, counts, transcript, questions, error, ended } = host;
   const [tab, setTab] = useState<'transcript' | 'questions'>('transcript');
   const [qrOpen, setQrOpen] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   const onChunk = useCallback((audio: AudioInput) => void host.sendChunk(audio), [host]);
   const mic = useChunkedRecorder(onChunk);
@@ -184,7 +184,7 @@ function LevelDot({ level }: { level?: number }) {
   return <Animated.View style={[styles.levelDot, { transform: [{ scale }] }, style]} />;
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.paper },
   topBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, height: 60 },
   topBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.line },
@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
   missingBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   segmented: { flexDirection: 'row', backgroundColor: Colors.card, borderRadius: Radius.sm, padding: 3, borderWidth: 1, borderColor: Colors.line },
   segment: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
-  segmentActive: { backgroundColor: Colors.ink },
+  segmentActive: { backgroundColor: Colors.strong },
   segmentText: { fontSize: 13, fontWeight: '700', color: Colors.inkSoft },
   segmentTextActive: { color: '#fff' },
   panel: { backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.md, gap: Spacing.sm, minHeight: 160, ...Shadow },
@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
   questionOrig: { fontSize: 13, color: Colors.inkSoft },
   dock: { padding: Spacing.md, backgroundColor: Colors.card, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.line },
   live: { height: 60, borderRadius: Radius.pill, backgroundColor: Colors.red, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
-  liveOn: { backgroundColor: Colors.ink },
+  liveOn: { backgroundColor: Colors.strong },
   liveText: { color: '#fff', fontSize: 17, fontWeight: '800' },
   levelDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#FF4D5E' },
-});
+}));

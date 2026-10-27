@@ -39,3 +39,14 @@ export function wgs84ToGcj02(point: Coords): Coords {
     longitude: point.longitude + (dLon * 180) / ((A / sqrtMagic) * Math.cos(radLat) * Math.PI),
   };
 }
+
+/** The inverse, for GPS-based maps (Mapbox) showing GCJ-02 data from AMap. Iterative; well under a metre off. */
+export function gcj02ToWgs84(point: Coords): Coords {
+  if (outOfChina(point)) return point;
+  let guess = point;
+  for (let i = 0; i < 4; i++) {
+    const shifted = wgs84ToGcj02(guess);
+    guess = { latitude: guess.latitude + point.latitude - shifted.latitude, longitude: guess.longitude + point.longitude - shifted.longitude };
+  }
+  return guess;
+}

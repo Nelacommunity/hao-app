@@ -166,11 +166,11 @@ export async function handleTurn(provider: AgentProvider, room: Room, from: Part
     const voiced = await Promise.all(
       lines.map(async (line) => {
         const language = line.to === 'LOCAL' ? localLang : userLanguage;
-        const audio = config.roomTts === 'gemini' ? await provider.synthesize({ text: line.text, language }).catch(() => null) : null;
+        const audio = config.roomTts === 'server' ? await provider.synthesize({ text: line.text, language }).catch(() => null) : null;
         return { ...line, language, audio };
       })
     );
-    timing.tts = config.roomTts === 'gemini' ? Date.now() - tts : 0;
+    timing.tts = config.roomTts === 'server' ? Date.now() - tts : 0;
 
     const host = hostOf(room);
     const local = localOf(room);

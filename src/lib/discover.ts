@@ -1,136 +1,183 @@
-import { CultureItems, Festivals, SolarTerms, ZodiacYears, type CultureItem, type Festival, type SolarTerm } from '@/data/culture';
-import { Dishes, type Dish } from '@/data/food';
+// Discover beyond the generated stories: real AMap places and a phrase of the day mixed into the feed, likes
+// everyone can see, sharing, and Hao's voice guide that explains any item aloud.
+import * as Speech from 'expo-speech';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Share } from 'react-native';
+
+import { Cities, type Place } from '@/data/places';
 import { PhraseGroups, type Phrase } from '@/data/phrases';
-import { Places, type Place } from '@/data/places';
+import { getTravellerLanguage } from '@/lib/language-store';
+import type { Coords } from '@/lib/location';
+import { fetchPlaces } from '@/lib/places';
+import type { Story } from '@/lib/stories';
+import { supabase } from '@/lib/supabase';
 
-export type Upcoming = { kind: 'festival'; item: Festival; days: number } | { kind: 'term'; item: SolarTerm; days: number };
-
-export type TodayInfo = {
-  date: Date;
-  /** e.g. 九月十二, or null where the device can't compute the Chinese calendar. */
-  lunar: string | null;
-  festival: Festival | null;
-  term: SolarTerm | null;
-  upcoming: Upcoming[];
-  zodiac: (typeof ZodiacYears)[number] | null;
-};
-
-export type ReelCard =
-  | { kind: 'today'; id: string; today: TodayInfo }
-  | { kind: 'place'; id: string; place: Place; daily?: boolean }
-  | { kind: 'dish'; id: string; dish: Dish; daily?: boolean }
-  | { kind: 'culture'; id: string; item: CultureItem; daily?: boolean }
-  | { kind: 'festival'; id: string; item: Festival; days: number }
+export type DiscoverItem =
+  | { kind: 'story'; id: string; story: Story }
+  | { kind: 'place'; id: string; place: Place }
   | { kind: 'phrase'; id: string; phrase: Phrase; group: string };
 
-const DAY = 86_400_000;
-const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-const daysBetween = (a: Date, b: Date) => Math.round((midnight(b).getTime() - midnight(a).getTime()) / DAY);
+/** The key likes are stored under (see the discover_likes migration). */
+export const itemKey = (item: DiscoverItem) =>
+  item.kind === 'story' ? `story:${item.story.id}` : item.kind === 'place' ? `place:${item.place.id}` : `phrase:${item.phrase.zh}`;
 
-const DIGITS = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
-function lunarDay(n: number) {
-  if (n <= 10) return `初${DIGITS[n]}`;
-  if (n < 20) return `十${DIGITS[n - 10]}`;
-  if (n === 20) return '二十';
-  if (n < 30) return `廿${DIGITS[n - 20]}`;
-  return '三十';
-}
+// ─── What goes in the feed ───────────────────────────────────────────────────
 
-function lunarDate(d: Date): string | null {
-  try {
-    const text = new Intl.DateTimeFormat('zh-CN-u-ca-chinese', { month: 'long', day: 'numeric' }).format(d);
-    // Engines without the Chinese calendar fall back to Gregorian ("10月22日"): don't show that as lunar.
-    const m = /([闰]?[正一二三四五六七八九十冬腊]+月)(\d+)/.exec(text);
-    if (!m) return null;
-    // Some engines print the day as digits ("九月13日"); traditional style is 初一…三十.
-    return `${m[1]}${lunarDay(Number(m[2]))}`;
-  } catch {
-    return null;
-  }
-}
-
-export function todayInChina(now: Date): TodayInfo {
-  const key = ymd(now);
-  const upcoming: Upcoming[] = [];
-  for (const f of Festivals) {
-    for (const date of f.dates) {
-      const days = daysBetween(now, new Date(`${date}T00:00:00`));
-      if (days > 0 && days <= 60) upcoming.push({ kind: 'festival', item: f, days });
-    }
-  }
-  for (const term of SolarTerms) {
-    for (const year of [now.getFullYear(), now.getFullYear() + 1]) {
-      const days = daysBetween(now, new Date(year, term.month - 1, term.day));
-      if (days > 0 && days <= 30) upcoming.push({ kind: 'term', item: term, days });
-    }
-  }
-  upcoming.sort((a, b) => a.days - b.days);
-  return {
-    date: now,
-    lunar: lunarDate(now),
-    festival: Festivals.find((f) => f.dates.includes(key)) ?? null,
-    term: SolarTerms.find((t) => t.month === now.getMonth() + 1 && t.day === now.getDate()) ?? null,
-    upcoming: upcoming.slice(0, 3),
-    zodiac: ZodiacYears.find((z) => key >= z.from && key <= z.to) ?? null,
-  };
-}
-
-/** Small seeded RNG so everyone sees the same order on a given day, and a new one tomorrow. */
-function rng(seed: number) {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let x = Math.imul(s ^ (s >>> 15), 1 | s);
-    x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
-    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
-  };
-}
-function shuffle<T>(list: T[], random: () => number) {
-  const out = [...list];
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
+/** Today's phrase from the built-in list, the same for everyone on a given (China) day. */
+export function phraseOfTheDay(day: string): DiscoverItem {
+  const all = PhraseGroups.flatMap((g) => g.phrases.map((phrase) => ({ phrase, group: g.title })));
+  const n = Math.floor(Date.parse(`${day}T00:00:00Z`) / 86_400_000);
+  const pick = all[((n % all.length) + all.length) % all.length];
+  return { kind: 'phrase', id: `phrase:${pick.phrase.zh}`, ...pick };
 }
 
 /**
- * The Discover feed for one day: today's card, the place/dish/culture/phrase of the day, upcoming
- * festivals, then everything else mixed so places, food and culture alternate.
+ * Cultural places and landmarks with real AMap photos: around the user when we know where they are,
+ * otherwise in the feed's city. Best rated first, at most `limit`.
  */
-export function buildFeed(now: Date): ReelCard[] {
-  const dayNumber = Math.floor(midnight(now).getTime() / DAY);
-  const random = rng(dayNumber * 2654435761);
-  const today = todayInChina(now);
+export async function culturePlaces(o: { near: Coords | null; city: string | null; limit?: number }): Promise<DiscoverItem[]> {
+  const cityZh = Cities.find((c) => c.name.toLowerCase() === (o.city ?? '').toLowerCase())?.nameZh ?? Cities[0].nameZh;
+  const query = (category: 'culture' | 'landmark') =>
+    fetchPlaces(o.near ? { near: o.near, radius: 20_000, category } : { city: cityZh, category }).catch(() => [] as Place[]);
+  const [culture, landmarks] = await Promise.all([query('culture'), query('landmark')]);
+  const seen = new Set<string>();
+  return [...culture, ...landmarks]
+    .filter((p) => p.photos.length > 0 && !seen.has(p.id) && seen.add(p.id))
+    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
+    .slice(0, o.limit ?? 8)
+    .map((place) => ({ kind: 'place' as const, id: `place:${place.id}`, place }));
+}
 
-  const places = shuffle(Places, random);
-  const dishes = shuffle(Dishes, random);
-  const culture = shuffle(CultureItems, random);
-  const phrases = PhraseGroups.flatMap((g) => g.phrases.map((phrase) => ({ phrase, group: g.title })));
-  const phrase = phrases[dayNumber % phrases.length];
+/** Stories with a place after every two, and the phrase second (when there's no phrase story today). */
+export function mixFeed(stories: Story[], places: DiscoverItem[], phrase: DiscoverItem | null): DiscoverItem[] {
+  const out: DiscoverItem[] = [];
+  const queue = [...places];
+  stories.forEach((story, i) => {
+    out.push({ kind: 'story', id: story.id, story });
+    if (i % 2 === 1 && queue.length) out.push(queue.shift()!);
+  });
+  out.push(...queue);
+  if (phrase && !stories.some((s) => s.type === 'phrase_of_the_day')) out.splice(Math.min(1, out.length), 0, phrase);
+  return out;
+}
 
-  const cards: ReelCard[] = [{ kind: 'today', id: 'today', today }];
-  if (today.festival) cards.push({ kind: 'festival', id: `festival-${today.festival.id}`, item: today.festival, days: 0 });
-  cards.push({ kind: 'culture', id: `culture-${culture[0].id}`, item: culture[0], daily: true });
-  cards.push({ kind: 'place', id: `place-${places[0].id}`, place: places[0], daily: true });
-  cards.push({ kind: 'dish', id: `dish-${dishes[0].id}`, dish: dishes[0], daily: true });
-  for (const u of today.upcoming) {
-    if (u.kind === 'festival') cards.push({ kind: 'festival', id: `festival-${u.item.id}`, item: u.item, days: u.days });
+// ─── Likes ───────────────────────────────────────────────────────────────────
+
+export async function fetchLikes(keys: string[]): Promise<{ counts: Record<string, number>; mine: Set<string> }> {
+  if (!keys.length) return { counts: {}, mine: new Set() };
+  const [counts, mine] = await Promise.all([
+    supabase.rpc('discover_like_counts', { item_keys: keys.slice(0, 100) }),
+    supabase.from('discover_likes').select('item_key').in('item_key', keys.slice(0, 100)),
+  ]);
+  if (counts.error) throw counts.error;
+  if (mine.error) throw mine.error;
+  return {
+    counts: Object.fromEntries((counts.data ?? []).map((r) => [r.item_key, Number(r.likes)])),
+    mine: new Set((mine.data ?? []).map((r) => r.item_key)),
+  };
+}
+
+export async function setLiked(key: string, liked: boolean) {
+  const { error } = liked
+    ? await supabase.from('discover_likes').upsert({ item_key: key }, { onConflict: 'user_id,item_key', ignoreDuplicates: true })
+    : await supabase.from('discover_likes').delete().eq('item_key', key);
+  if (error) throw error;
+}
+
+// ─── Sharing ─────────────────────────────────────────────────────────────────
+
+export function shareItem(item: DiscoverItem, t: (s: string, v?: Record<string, string | number>) => string) {
+  let message = '';
+  if (item.kind === 'story') {
+    const s = item.story;
+    message = `${s.title}\n\n${s.slides.map((x) => `${x.heading}. ${x.body}`).join('\n\n')}`;
+  } else if (item.kind === 'place') {
+    const p = item.place;
+    const map = `https://uri.amap.com/marker?position=${p.longitude},${p.latitude}&name=${encodeURIComponent(p.nameZh || p.name)}&coordinate=gaode&callnative=1`;
+    message = `${p.name}${p.nameZh && p.nameZh !== p.name ? ` · ${p.nameZh}` : ''}\n${p.addressZh || p.address}\n${map}`;
+  } else {
+    message = `${item.phrase.zh} (${item.phrase.pinyin})\n${t(item.phrase.en)}`;
   }
-  cards.push({ kind: 'phrase', id: 'phrase', phrase: phrase.phrase, group: phrase.group });
+  return Share.share({ message: `${message}\n\n${t('Discovered with Hao')}` }).catch(() => {});
+}
 
-  // The rest: place, culture, place, dish… until everything has been shown once.
-  const queues: ReelCard[][] = [
-    places.slice(1).map((place) => ({ kind: 'place' as const, id: `place-${place.id}`, place })),
-    culture.slice(1).map((item) => ({ kind: 'culture' as const, id: `culture-${item.id}`, item })),
-    dishes.slice(1).map((dish) => ({ kind: 'dish' as const, id: `dish-${dish.id}`, dish })),
-  ];
-  const pattern = [0, 1, 0, 2, 0, 1];
-  for (let i = 0; queues.some((q) => q.length); i++) {
-    const q = queues[pattern[i % pattern.length]];
-    const next = q.shift() ?? queues.find((x) => x.length)?.shift();
-    if (next) cards.push(next);
-  }
-  return cards;
+// ─── Hao's voice guide ───────────────────────────────────────────────────────
+
+const explained = new Map<string, string>();
+
+async function explain(item: DiscoverItem): Promise<string> {
+  const language = getTravellerLanguage();
+  const cacheKey = `${language.code}|${itemKey(item)}`;
+  const hit = explained.get(cacheKey);
+  if (hit) return hit;
+  const p = item.kind === 'place' ? item.place : null;
+  const body = {
+    language: { code: language.code, name: language.name },
+    item:
+      item.kind === 'story'
+        ? { kind: 'story', id: item.story.id }
+        : p
+          ? { kind: 'place', place: { id: p.id, name: p.name, nameZh: p.nameZh, type: p.type, typeZh: p.typeZh, cityZh: p.cityZh, districtZh: p.districtZh, address: p.address, rating: p.rating, tags: p.tags } }
+          : { kind: 'phrase', phrase: item.kind === 'phrase' ? { ...item.phrase } : null },
+  };
+  const { data } = await supabase.auth.getSession();
+  const res = await fetch('/api/discover-guide', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token ?? ''}` },
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json().catch(() => null)) as { text?: string; error?: string } | null;
+  if (!res.ok || !json?.text) throw new Error(json?.error ?? `Hao could not explain this (${res.status})`);
+  explained.set(cacheKey, json.text);
+  return json.text;
+}
+
+export type GuideState = { key: string; status: 'loading' | 'speaking' | 'done' | 'error'; text: string; error?: string } | null;
+
+/** Plays Hao's explanation of one item at a time; starting another (or `stop`) ends the current one. */
+export function useHaoGuide() {
+  const [state, setState] = useState<GuideState>(null);
+  const current = useRef<string | null>(null);
+
+  const speak = useCallback((key: string, text: string) => {
+    current.current = key;
+    Speech.stop();
+    const finish = () => {
+      if (current.current === key) setState((s) => (s?.key === key ? { ...s, status: 'done' } : s));
+    };
+    setState({ key, status: 'speaking', text });
+    Speech.speak(text, { language: getTravellerLanguage().speech, rate: 0.95, onDone: finish, onStopped: finish, onError: finish });
+  }, []);
+
+  const stop = useCallback(() => {
+    current.current = null;
+    Speech.stop();
+    setState(null);
+  }, []);
+
+  const play = useCallback(
+    (item: DiscoverItem) => {
+      const key = itemKey(item);
+      current.current = key;
+      Speech.stop();
+      setState({ key, status: 'loading', text: '' });
+      explain(item).then(
+        (text) => {
+          if (current.current === key) speak(key, text);
+        },
+        (e: Error) => {
+          if (current.current === key) setState({ key, status: 'error', text: '', error: e.message });
+        }
+      );
+    },
+    [speak]
+  );
+
+  /** Replays the last explanation without asking the server again. */
+  const replay = useCallback(() => {
+    if (state?.text) speak(state.key, state.text);
+  }, [state, speak]);
+
+  useEffect(() => () => void Speech.stop(), []);
+  return { state, play, stop, replay };
 }

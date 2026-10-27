@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing, themed } from '@/constants/theme';
 import { useAuth } from '@/lib/auth';
 import { deleteMemory, forgetEverything, formatWhen, listMemories, MemoryKindMeta, type MemoryItem } from '@/lib/memory';
 import { useT } from '@/lib/i18n';
@@ -120,14 +120,14 @@ export default function MemoriesScreen() {
               <Ionicons name="trash" size={16} color={Colors.redDark} />
               <Text style={styles.forgetText}>{t('Forget everything')}</Text>
             </Pressable>
-          ) : null
+          ) : undefined
         }
       />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.paper },
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.md, height: 56 },
   back: {
@@ -184,4 +184,4 @@ const styles = StyleSheet.create({
   itemMeta: { fontSize: 12, color: Colors.muted, marginTop: 3 },
   forget: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: Spacing.lg, paddingVertical: 12 },
   forgetText: { fontSize: 14, fontWeight: '800', color: Colors.redDark },
-});
+}));

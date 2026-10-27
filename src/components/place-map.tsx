@@ -1,84 +1,52 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
-import { CategoryMeta, type Place } from '@/data/places';
-import { wgs84ToGcj02 } from '@/lib/china-coords';
-import type { Coords } from '@/lib/location';
-import { useT } from '@/lib/i18n';
+import type { MapEvent } from '@/components/map/leaflet-html';
+import { useMapPage, type PlaceMapProps } from '@/components/map/use-map-page';
 
-export type PlaceMapProps = {
-  places: Place[];
-  center: Coords;
-  /** Span of the visible region in degrees when nothing is selected. */
-  delta?: number;
-  userLocation?: Coords | null;
-  selectedId?: string;
-  onSelect: (id: string) => void;
-  /** Route to draw from the user to the selected place (GPS coordinates). */
-  route?: { coords: Coords[]; approximate: boolean } | null;
-  /** Height covered by UI at the bottom (the sheet), so fitted routes stay visible. */
-  bottomInset?: number;
-};
+export type { PlaceMapProps };
 
-// Our data and GPS are WGS-84; the native map tiles in mainland China are GCJ-02.
-const toMap = (p: Coords) => wgs84ToGcj02({ latitude: p.latitude, longitude: p.longitude });
-
-export function PlaceMap({ places, center, delta = 0.25, selectedId, onSelect, route, bottomInset = 0 }: PlaceMapProps) {
-  const t = useT();
-  const mapRef = useRef<MapView>(null);
-  const routeCoords = route?.coords.map(toMap);
+// AMap (高德) tiles drawn with Leaflet in a WebView on iOS and Android: one map that loads in mainland
+// China, needs no Google Play services or map SDK key, and runs in Expo Go.
+export function PlaceMap(props: PlaceMapProps) {
+  const { places, onSelect } = props;
+  const { html, state, view } = useMapPage(props);
+  const webRef = useRef<WebView<object>>(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (routeCoords && routeCoords.length > 1) {
-      mapRef.current?.fitToCoordinates(routeCoords, {
-        edgePadding: { top: 140, right: 48, bottom: bottomInset + 48, left: 48 },
-        animated: true,
-      });
+    if (ready) webRef.current?.injectJavaScript(`window.haoState(${JSON.stringify(state)});true;`);
+  }, [ready, state]);
+
+  useEffect(() => {
+    if (ready) webRef.current?.injectJavaScript(`window.haoView(${JSON.stringify(view)});true;`);
+  }, [ready, view]);
+
+  const onMessage = (e: WebViewMessageEvent) => {
+    let msg: MapEvent;
+    try {
+      msg = JSON.parse(e.nativeEvent.data) as MapEvent;
+    } catch {
       return;
     }
-    const selected = places.find((p) => p.id === selectedId);
-    const target = toMap(selected ?? center);
-    mapRef.current?.animateToRegion(
-      {
-        ...target,
-        latitudeDelta: selected ? 0.05 : delta,
-        longitudeDelta: selected ? 0.05 : delta,
-      },
-      450
-    );
-    // routeCoords is derived from `route`, which is the real dependency.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [center, delta, places, selectedId, route, bottomInset]);
+    if (msg.type === 'ready') setReady(true);
+    else if (msg.type === 'select' && places.some((p) => p.id === msg.id)) onSelect(msg.id);
+  };
 
   return (
-    <MapView
-      ref={mapRef}
+    <WebView<object>
+      ref={webRef}
       style={StyleSheet.absoluteFill}
-      initialRegion={{ ...toMap(center), latitudeDelta: delta, longitudeDelta: delta }}
-      showsUserLocation
-      showsMyLocationButton={false}
-      showsPointsOfInterests={false}>
-      {routeCoords && routeCoords.length > 1 ? (
-        <Polyline
-          coordinates={routeCoords}
-          strokeColor="#2576FF"
-          strokeWidth={6}
-          lineCap="round"
-          lineJoin="round"
-          lineDashPattern={route?.approximate ? [8, 10] : undefined}
-        />
-      ) : null}
-      {places.map((p) => (
-        <Marker
-          key={p.id}
-          coordinate={toMap(p)}
-          title={t(p.name)}
-          description={p.nameZh}
-          pinColor={CategoryMeta[p.category].color}
-          onPress={() => onSelect(p.id)}
-        />
-      ))}
-    </MapView>
+      originWhitelist={['*']}
+      source={{ html, baseUrl: 'https://localhost/' }}
+      onMessage={onMessage}
+      // The page never navigates; block anything that tries (e.g. a tapped attribution link).
+      onShouldStartLoadWithRequest={(req) => req.url === 'https://localhost/' || req.url.startsWith('about:')}
+      setSupportMultipleWindows={false}
+      overScrollMode="never"
+      androidLayerType="hardware"
+      cacheEnabled
+    />
   );
 }

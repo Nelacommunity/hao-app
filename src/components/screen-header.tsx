@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 
-import { Colors, Spacing } from '@/constants/theme';
+import { Colors, Spacing, themed } from '@/constants/theme';
 
 type Props = {
   eyebrow?: string;
@@ -22,7 +22,7 @@ export function ScreenHeader({ eyebrow, title, subtitle, right }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -50,4 +50,4 @@ const styles = StyleSheet.create({
     color: Colors.inkSoft,
     marginTop: 4,
   },
-});
+}));

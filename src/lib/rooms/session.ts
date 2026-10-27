@@ -10,17 +10,17 @@ export type HostedRoom = { roomId: string; type: RoomType; joinUrl: string; expi
 const ROOM_TTL_MS = 3 * 60 * 60 * 1000;
 
 /**
- * Where guests open the join page (public/join.html, served by the Expo web server):
- * EXPO_PUBLIC_WEB_URL in production (e.g. an EAS Hosting URL), otherwise the dev server —
- * https when started with `npx expo start --tunnel`, which the guest's microphone needs.
+ * Where guests open the join page (public/join.html). The guest's microphone needs https, so:
+ * the dev server when it's https (`npx expo start --tunnel`), otherwise EXPO_PUBLIC_WEB_URL (the
+ * EAS Hosting deployment, which production builds always use), otherwise the plain-http dev server.
  */
 export function webBaseUrl() {
-  const configured = process.env.EXPO_PUBLIC_WEB_URL?.replace(/\/+$/, '');
-  if (configured) return configured;
   if (Platform.OS === 'web' && typeof window !== 'undefined') return window.location.origin;
   const host = Constants.expoConfig?.hostUri;
-  if (host) return host.includes('exp.direct') ? `https://${host.replace(/:\d+$/, '')}` : `http://${host}`;
-  return '';
+  if (host?.includes('exp.direct')) return `https://${host.replace(/:\d+$/, '')}`;
+  const configured = process.env.EXPO_PUBLIC_WEB_URL?.replace(/\/+$/, '');
+  if (configured) return configured;
+  return host ? `http://${host}` : '';
 }
 
 // The rooms this device is hosting, shared by the QR page and the live screens.
@@ -49,9 +49,17 @@ export function forgetHostedRoom(type: RoomType) {
   delete rooms[type];
 }
 
-// Where the user said they are (restaurant, taxi…), chosen on the QR page and used by the conversation.
-let roomContext: RoomContext | null = 'restaurant';
+// Where the conversation happens when Hao knows it ("Talk to staff" on a place card sets it); null is a casual chat.
+let roomContext: RoomContext | null = null;
 export const getRoomContext = () => roomContext;
 export const setRoomContext = (next: RoomContext | null) => {
   roomContext = next;
+};
+
+// The place a Voice Room was opened for ("Talk to staff" on a place card). When the conversation
+// ends, Hao asks whether the user went there.
+let roomPlace: { id: string; name: string } | null = null;
+export const getRoomPlace = () => roomPlace;
+export const setRoomPlace = (next: { id: string; name: string } | null) => {
+  roomPlace = next;
 };

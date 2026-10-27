@@ -33,7 +33,8 @@ http://127.0.0.1:54324.
 ```bash
 cp .env.example .env
 ```
-Fill in `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_KEY` (publishable/anon key) and `GEMINI_API_KEY`.
+Fill in `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_KEY` (publishable/anon key) and `QWEN_API_KEY`.
+The AI is Qwen (Alibaba Cloud Model Studio) everywhere, including the `generate-stories` Edge Function.
 
 ### 3. Run
 ```bash
@@ -46,7 +47,7 @@ npm start
 - `src/lib/auth.tsx` — `AuthProvider` / `useAuth()` (session, profile, sign out) and `useLanguagePreference()`.
 - `src/app/_layout.tsx` — `Stack.Protected` guards: signed-out users see landing, onboarding and `(auth)`;
   signed-in users see the tabs. The splash screen stays up until the stored session loads.
-- `(auth)/sign-up` → `verify` (6-digit code) · `sign-in` · `forgot-password` → `verify` → `update-password`.
+- `(auth)/sign-up` → `verify` (6-digit code) · `sign-in` · `forgot-password` → `verify` → `update-password` · Profile → `change-password`.
 - Profile tab: edit name, language (saved to the profile), saved places, sign out, **delete account**
   (required by the App Store and Google Play).
 
@@ -62,7 +63,7 @@ npm start
 After changing the schema run `npm run db:types` to regenerate `src/lib/database.types.ts`.
 
 ## Agent security
-The agent calls Gemini from the server route `src/app/api/agent+api.ts`, so the API key never ships inside the
+The agent calls Qwen from the server route `src/app/api/agent+api.ts`, so the API key never ships inside the
 app, and the route rejects requests without a valid Supabase session. In development the app reaches it through
 the Expo dev server. For production, deploy with EAS Hosting (`npx expo export --platform web && npx eas-cli@latest deploy`),
 add the env vars there, and set the `origin` option of the `expo-router` plugin in `app.json` to the deployed URL.
@@ -71,7 +72,7 @@ add the env vars there, and set the `origin` option of the `expo-router` plugin 
 
 Rooms run on **Supabase Realtime** (broadcast + presence) — there is no separate server to run. The host's phone
 acts as the room: it keeps the state, decides whose turn it is, and calls the AI through the app's API routes
-(`/api/room/*`, Gemini key on the server, signed-in users only, memory saved as the user). Guests need **no app and
+(`/api/room/*`, Qwen key on the server, signed-in users only, memory saved as the user). Guests need **no app and
 no account**: they open `public/join.html` (served by the Expo web server) from the QR code.
 
 - **One QR page, like WeChat** (Translate tab → QR icon): **My code** shows your card and QR with a switch between
@@ -96,7 +97,7 @@ which works for broadcast listeners on the same Wi-Fi but browsers block the mic
 
 **Production:** deploy the web build and API routes with EAS Hosting (`npx expo export --platform web && npx eas-cli@latest deploy`),
 set `EXPO_PUBLIC_WEB_URL` to the deployed URL (QR links) and the `origin` option of the `expo-router` plugin in
-`app.json` (native API calls), and add `GEMINI_API_KEY` to the hosting environment.
+`app.json` (native API calls), and add `QWEN_API_KEY` to the hosting environment.
 
 Supabase Realtime needs no setup beyond the defaults (public broadcast channels enabled). Room codes are 10 random
 characters (≈ 49 bits), so channels can't be guessed. The old `server/` folder (Node WebSocket server) is no longer
@@ -107,13 +108,13 @@ used and can be deleted.
 A conversation turn is tuned to get Hao talking about 4–5 s after the speaker stops (it was 7–8 s):
 
 - Recording stops after 0.7 s of silence.
-- The agent listens to the audio itself while a light model (`GEMINI_FAST_MODEL`, default `gemini-3.5-flash-lite`)
+- The agent listens to the audio itself while a second call (`QWEN_AUDIO_MODEL`, default `qwen3.8-omni-flash`)
   transcribes it in parallel. The transcript is the caption and a guard: when it hears no speech, the agent's
   reply is dropped (a model that knows the conversation can otherwise "hear" a price in background noise).
 - `/api/room/turn` streams NDJSON (`said` → `say` → `done`). Phones start speaking the line for the other person
   as soon as the model writes it; whispers, alerts and the order summary follow a moment later.
 - Profile and memories load during transcription; verified sign-in tokens are cached for a minute.
-- Each turn logs `[turn] stt=… say=… llm=…` in the Expo server console. `GEMINI_ROOM_MODEL` picks the agent model.
+- Each turn logs `[turn] stt=… say=… llm=…` in the Expo server console. `QWEN_ROOM_MODEL` picks the agent model for text turns; audio turns use `QWEN_AUDIO_MODEL`.
 
 ## Knowledge base
 
@@ -146,7 +147,7 @@ The whole app (screens, tips, places, dishes) shows in the language the user pic
 
 - English is written in the code: `t('Get started')` in components, `tx('…')` for text in lists and data
   (shown with `t(value)`). After changing text run `npm run i18n:build` to refresh `shared/i18n/catalog.generated.ts`.
-- The first time anyone picks a language, `/api/ui-strings` has Gemini translate the catalog (≈25 s, one time),
+- The first time anyone picks a language, `/api/ui-strings` has Qwen translate the catalog (≈25 s, one time),
   saves it in Supabase (`ui_translations`) and every later user gets it from the database. Phones also keep a
   copy, so a language loads instantly after the first time. A new or changed string is the only thing re-translated.
 - Abuse-proof: the server only ever translates its own catalog (never text from the request), each language once;
@@ -167,7 +168,7 @@ must be https. The QR page shows a warning when it isn't.
 - Quick, in development: `npx expo start --tunnel` (the app detects the https tunnel URL), or run any https tunnel
   to port 8081 (e.g. `cloudflared tunnel --url http://localhost:8081`) and put its URL in `EXPO_PUBLIC_WEB_URL`.
 - Production: deploy the web build and API routes to EAS Hosting (`npx expo export -p web` then
-  `npx eas-cli@latest deploy --prod`), add the server env vars there (`GEMINI_API_KEY`, `SUPABASE_SECRET_KEY`,
+  `npx eas-cli@latest deploy --prod`), add the server env vars there (`QWEN_API_KEY`, `SUPABASE_SECRET_KEY`,
   `EXPO_PUBLIC_SUPABASE_*`), and set `EXPO_PUBLIC_WEB_URL` to the https URL it gives you.
 
 ## Next steps
