@@ -241,6 +241,12 @@ describe('feed mix', () => {
     assert.equal(rank([loved, ...pool()])[0].id, loved.id);
   });
 
+  it('boosts "your country and China" for people from there, and shows it to nobody else', () => {
+    const home = s('home_and_china', { nationality: 'TZ' });
+    assert.equal(rank([home, ...pool()])[0].id, home.id);
+    assert.equal(exclusionOf(home, profile({ nationality: 'KE' }), emptyHistory(), 'en'), 'nationality');
+  });
+
   it('includes a lone type even when it scores low', () => {
     const season = s('season_tip');
     const others = (['culture_moment', 'food_to_try', 'place_spotlight'] as StoryType[]).flatMap((t) => [...Array(6)].map(() => s(t)));

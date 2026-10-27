@@ -1,9 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Speech from 'expo-speech';
-import { Image } from 'expo-image';
 import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions, type GestureResponderEvent } from 'react-native';
 
+import { CardPhoto } from '@/components/card-photo';
 import { RAIL_WIDTH } from '@/components/discover-rail';
 import { Colors, Radius, Spacing, themed } from '@/constants/theme';
 import { CategoryMeta, type Place } from '@/data/places';
@@ -44,7 +44,7 @@ export function PlaceCard({ place, height, topInset, active, rail, onDirections,
     <View style={{ height, width, backgroundColor: meta.color }}>
       <Pressable onPress={onTap} style={StyleSheet.absoluteFill} accessible={false}>
         {photos[index] ? (
-          <Image source={{ uri: photos[index] }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} cachePolicy="disk" accessibilityIgnoresInvertColors />
+          <CardPhoto uri={photos[index]} />
         ) : null}
       </Pressable>
 

@@ -8,7 +8,7 @@
 # import ../../../shared/..., which is outside the folder the container mounts, so shared/ goes to
 # volumes/functions/_shared and the copied functions import ../_shared/... instead. No change to the
 # VPS's docker-compose.yml is needed.
-# Secrets (GEMINI_API_KEY, AMAP_KEY, …) live in the VPS's .env and the functions service's environment.
+# Secrets (QWEN_API_KEY, AMAP_KEY, …) live in the VPS's .env and the functions service's environment.
 #
 # Needs VPS_SSH and VPS_DOCKER_DIR in .env.vps.local (see scripts/vps/vps.env.example), and ssh + rsync.
 # VPS_FUNCTIONS_SERVICE names the compose service (default: functions, as in Supabase's docker-compose.yml).
@@ -94,5 +94,5 @@ if [ "$failed" = 1 ]; then
   fi
   exit 1
 fi
-echo "Deployed. For a full test run (it calls Gemini, so it costs):"
+echo "Deployed. For a full test run (it calls Qwen, so it costs):"
 echo "  curl -X POST ${NEW_API_URL%/}/functions/v1/generate-stories -H \"Authorization: Bearer \$NEW_SERVICE_KEY\" -H 'Content-Type: application/json' -d '{\"dry_run\":true}'"

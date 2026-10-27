@@ -1,6 +1,6 @@
 // Prompts for writing one Discover story from given facts. The model only writes the words: every fact,
 // image, place and button target comes from code (see generate.ts).
-import { MAX_BODY_WORDS, MAX_HEADING_WORDS, type StoryType } from './schema.ts';
+import { MAX_BODY_WORDS, MAX_CHOICE_WORDS, MAX_HEADING_WORDS, MAX_QUESTION_WORDS, MAX_WHY_WORDS, type StoryType } from './schema.ts';
 
 export function storySystemPrompt(language: string) {
   return `You write short Discover stories for Hao, an app that helps international students and tourists feel at home in China.
@@ -16,7 +16,8 @@ Rules:
 7. FACTS from Wikipedia can be long: pick the friendly, cultural parts (what it is, how people enjoy it, what to look for) and leave out anything political, contested or sad.
 8. For a skill to learn, teach the steps in order, in plain words, exactly as given; never add steps.
 9. The last slide should lead naturally to the button.
-10. Return ONLY a JSON object: {"title": string, "slides": [{"heading": string, "body": string}], "action_label": string}. No markdown, no extra keys.`;
+10. When a QUIZ is asked for: one question whose answer is stated in FACTS, 2–3 short choices where only one is right and the others are plausible but clearly wrong by FACTS, "answer" = the index (from 0) of the right choice, and "why" = one or two sentences explaining it from FACTS. Question at most ${MAX_QUESTION_WORDS} words, each choice at most ${MAX_CHOICE_WORDS}, why at most ${MAX_WHY_WORDS}. Never a trick question.
+11. Return ONLY a JSON object: {"title": string, "slides": [{"heading": string, "body": string}], "action_label": string} (plus "quiz": {"question": string, "choices": [string], "answer": number, "why": string} when asked for). No markdown, no extra keys.`;
 }
 
 const GOALS: Record<StoryType, string> = {
@@ -29,15 +30,35 @@ const GOALS: Record<StoryType, string> = {
   coming_up: 'A holiday countdown: when it starts (exactly as given), what it is, what will be closed or crowded, and one tip.',
   season_tip: 'Weather and season advice for the next few days in this city, from the forecast and climate notes.',
   learn_how: 'Teach this hands-on skill like a friendly teacher: slide 1 what it is and what you need, slides 2–3 the steps in order, slide 4 the last step and a tip, inviting the user to learn it with Hao.',
+  did_you_know:
+    'A "Did you know?" story. The reader first answers the QUIZ: a surprising, fun fact from FACTS that most visitors would not guess. The slides then reveal and explain it: slide 1 the answer and what it means, the next slides the story behind it and how to see or enjoy it in China. Curious and playful, never smug.',
+  painting:
+    'Introduce this famous Chinese painting to someone seeing it for the first time, as a museum guide would: slide 1 what it is and who painted it, the middle slides what it shows and what to look for (style, scenes, details), the last slide why people love it and where it is kept, only if FACTS say so. The picture on screen is the painting itself; the app zooms across it as the slides go.',
+  home_and_china:
+    'Show a traveller from the country in FACTS how their home and China are connected: people, students, trade, travel, culture, food, landmarks or shared history. Warm and personal ("you might be surprised…"), with real facts only. Leave out politics, governments, leaders, debt, military, disputes and anything negative; if FACTS are mostly about those, use only the friendly parts.',
 };
 
-export function storyUserPrompt(o: { type: StoryType; city: string; slides: number; actionLabel: string; facts: string[]; retryError?: string }) {
+export function storyUserPrompt(o: {
+  type: StoryType;
+  city: string;
+  slides: number;
+  actionLabel: string;
+  facts: string[];
+  /** Ask for a quiz shown before the slides (the story answers it) or after them (it checks what they said). */
+  quiz?: 'start' | 'end' | null;
+  retryError?: string;
+}) {
   return [
     `STORY TYPE: ${o.type}`,
     `CITY: ${o.city}`,
     `GOAL: ${GOALS[o.type]}`,
     `SLIDES: exactly ${o.slides}`,
     `BUTTON on the last slide: "${o.actionLabel}" (you may shorten it; at most 4 words).`,
+    ...(o.quiz === 'start'
+      ? ['QUIZ: yes, shown BEFORE the slides. Ask about the surprising fact; the slides then reveal and explain it.']
+      : o.quiz === 'end'
+        ? ['QUIZ: yes, shown AFTER the slides, as a friendly check of one thing the slides said.']
+        : []),
     'FACTS:',
     ...o.facts.map((f) => `- ${f}`),
     ...(o.retryError

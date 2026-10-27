@@ -177,6 +177,30 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        <Text style={styles.sectionTitle}>{t('Contact details')}</Text>
+        <View style={styles.card}>
+          <Text style={styles.prefIntro}>
+            {t('For when someone in a conversation asks for your number or email. Hao asks you first, every time, and never shares them on its own.')}
+          </Text>
+          <ContactField
+            icon="call-outline"
+            label={t('Phone')}
+            value={profile?.contact_phone ?? ''}
+            placeholder="+86 138 0000 0000"
+            keyboardType="phone-pad"
+            onSave={(v) => updateProfile({ contact_phone: v || null })}
+          />
+          <ContactField
+            icon="mail-outline"
+            label={t('Email')}
+            value={profile?.contact_email ?? ''}
+            placeholder={email}
+            keyboardType="email-address"
+            onSave={(v) => updateProfile({ contact_email: v || null })}
+            divider
+          />
+        </View>
+
         {profile?.is_admin ? (
           <>
             <Text style={styles.sectionTitle}>{t('Hao team')}</Text>
@@ -329,6 +353,49 @@ export default function ProfileScreen() {
   );
 }
 
+/** One contact detail, edited in place and saved when the field loses focus. */
+function ContactField({ icon, label, value, placeholder, keyboardType, onSave, divider }: {
+  icon: 'call-outline' | 'mail-outline';
+  label: string;
+  value: string;
+  placeholder: string;
+  keyboardType: 'phone-pad' | 'email-address';
+  onSave: (value: string) => Promise<void>;
+  divider?: boolean;
+}) {
+  const t = useT();
+  const [draft, setDraft] = useState<string | null>(null);
+  const save = () => {
+    const next = draft?.trim();
+    setDraft(null);
+    if (next !== undefined && next !== value) onSave(next).catch((e: Error) => Alert.alert(t('Something went wrong'), e.message));
+  };
+  return (
+    <View style={[styles.row, divider && styles.rowDivider]}>
+      <View style={[styles.rowIcon, { backgroundColor: Colors.paper }]}>
+        <Ionicons name={icon} size={18} color={Colors.ink} />
+      </View>
+      <Text style={styles.contactLabel}>{label}</Text>
+      <TextInput
+        value={draft ?? value}
+        onChangeText={setDraft}
+        onFocus={() => setDraft(value)}
+        onBlur={save}
+        onSubmitEditing={save}
+        placeholder={placeholder}
+        placeholderTextColor={Colors.muted}
+        keyboardType={keyboardType}
+        autoCapitalize="none"
+        autoCorrect={false}
+        maxLength={keyboardType === 'phone-pad' ? 32 : 254}
+        returnKeyType="done"
+        accessibilityLabel={label}
+        style={styles.contactInput}
+      />
+    </View>
+  );
+}
+
 const styles = themed(() => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.paper },
   card: {
@@ -385,6 +452,8 @@ const styles = themed(() => StyleSheet.create({
   rowLabel: { flex: 1, fontSize: 16, fontWeight: '600', color: Colors.ink },
   rowSub: { fontSize: 13, color: Colors.muted },
   rowValue: { fontSize: 14, color: Colors.inkSoft, maxWidth: 150 },
+  contactLabel: { fontSize: 16, fontWeight: '600', color: Colors.ink },
+  contactInput: { flex: 1, fontSize: 15, color: Colors.ink, textAlign: 'right', paddingVertical: 4 },
   prefIntro: { fontSize: 13, color: Colors.inkSoft, paddingTop: Spacing.md },
   emptySaved: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.md },
   emptyText: { flex: 1, fontSize: 14, color: Colors.muted },

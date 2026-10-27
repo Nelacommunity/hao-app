@@ -101,14 +101,16 @@ Newcomers can move money from home into Alipay, WeChat Pay or a Chinese bank car
 **Tanzania: Selcom Pesa**
 1. Open a Selcom Pesa account in the app with a NIDA card or Tanzanian passport, plus fingerprint and face check ([Selcom Pesa](https://www.selcompesa.app/selcom-pesa-new-landing-page)).
 2. Add money: from M-Pesa or other mobile money (Send Money to Bank → Selcom Microfinance Bank), from a bank, or with cash at a Selcom Huduma agent or Selcom Xperience Center.
-3. In the app, choose Send Internationally → China, then Alipay or WeChat Pay. Selcom asks for one of two things: an invoice (when paying a supplier), or the recipient's passport and their Alipay or WeChat ID. Have these ready before starting.
-4. Check the fee, rate and recipient requirements shown in the app before confirming; Selcom's site does not yet publish China fees (its India transfer is a flat 5.99 USD).
+3. Before sending to WeChat Pay, the person receiving in China must have the Tenpay Global Remittance mini-program set up in WeChat: search it in WeChat, verify once with face or ID, and create a Recipient Card, which holds the details the sender needs. Their WeChat Pay also needs a linked Chinese bank card. Without this, a WeChat transfer cannot be received ([Taptap Send](https://support.taptapsend.com/hc/en-gb/articles/45003659878163-How-to-activate-WeChat-China), [OCBC](https://www.ocbc.com/personal-banking/help-and-support/overseas-transfers-to-wallet/weixinpay)).
+4. In the app, choose Send Internationally → China, then Alipay or WeChat Pay. Selcom asks for one of two things: an invoice (when paying a supplier), or the recipient's passport and their Alipay or WeChat ID. Have these ready before starting.
+5. After sending to WeChat Pay, the recipient gets an SMS link that opens the Tenpay mini-program to accept the money into their WeChat balance or bank card. Most providers give 48 hours to accept, so tell them to watch for it ([Western Union](https://westernunion.com/blog/en/send-western-union-international-money-transfers-to-weixins-pay-wallet)).
+6. Check the fee, rate and recipient requirements shown in the app before confirming; Selcom's site does not yet publish China fees (its India transfer is a flat 5.99 USD).
 Help: toll-free 0800 714 888, WhatsApp +255 699 077 988.
 **Options by country**
 
 | From | Service | Pays into | Notes |
 |---|---|---|---|
-| Tanzania | Selcom Pesa | Alipay, WeChat Pay | Cash top-up at Selcom agents; China added Aug 2026 |
+| Tanzania | Selcom Pesa | Alipay, WeChat Pay | Cash top-up at Selcom agents; China added Aug 2026; WeChat recipients need the Tenpay Global Remittance mini-program |
 | Tanzania | M-Pesa Global Payment (Vodacom) | Pays Chinese merchants via Alipay | For paying businesses, not personal wallets ([Africa Brief](https://africabrief.substack.com/p/vodacom-tanzania-unveils-m-pesa-global)) |
 | Kenya | SimbaPay via Family Bank PesaPap or M-Pesa | WeChat Pay | Recipient's phone number needed ([TechCrunch](https://techcrunch.com/?p=1751255)); check it is still active |
 | South Africa, Kenya, Rwanda, Uganda, Zambia, Zimbabwe, Botswana, Malawi, Lesotho, UK | Mukuru | Alipay top-up, WeChat Pay | App or USSD ([Mukuru](https://www.mukuru.com/send-money/china/)) |
@@ -761,6 +763,7 @@ Visa lists, payment limits and fees change several times a year, so this guide s
 Added for the newer sections:
 - [Selcom Pesa site](https://www.selcompesa.app/selcom-pesa-new-landing-page) and [App Store notes](https://apps.apple.com/us/app/selcom-pesa/id6737184776)
 - [Taptap Send: sending to China](https://help.taptapsend.com/en/receiving-countries/how-can-i-send-money-to-china)
+- [Taptap Send: how to activate WeChat to receive](https://support.taptapsend.com/hc/en-gb/articles/45003659878163-How-to-activate-WeChat-China), [OCBC: Weixin Pay transfers and the Tenpay Global Remittance mini-program](https://www.ocbc.com/personal-banking/help-and-support/overseas-transfers-to-wallet/weixinpay)
 - [China Guidelines: online shopping (July 2026)](https://chinaguidelines.com/en/posts/online-shopping-in-china)
 - [China Guidelines: DiDi (January 2026)](https://chinaguidelines.com/en/posts/didi-taxi)
 - [China Guidelines: high-speed rail (June 2026)](https://chinaguidelines.com/en/posts/high-speed-train)

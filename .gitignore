@@ -44,3 +44,6 @@ example
 
 # secrets
 .env
+
+# Supabase → VPS migration: dumps hold user data and secrets
+supabase/.vps-backup/

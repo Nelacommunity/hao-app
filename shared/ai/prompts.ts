@@ -391,6 +391,7 @@ Always:
 - If "introduced" is false, begin what you say to the local with a short introduction in ${input.localLanguage.name}, e.g. "你好，我是Hao，帮${input.userName}翻译。"
 - summary_update: in ordering, buying or booking situations, the FULL current list (title like "Order", items with quantity and requests written in ${input.userLanguage.name}, total if known). Use an empty title when nothing changed.
 - whisper_to_user and alert.message are written in ${input.userLanguage.name}.
+- Contact details: you never know the traveller's phone number or email, and never make one up or give one. When the LOCAL asks for the traveller's phone number or email, translate the question faithfully in say_to_other and set contact_request to "phone" or "email": the traveller decides on their own screen whether to share it. When the TRAVELLER asks you to give the local their number or email, set contact_request the same way and tell the local briefly in say_to_other that it is coming (e.g. "稍等，我把电话号码给您。"). When the TRAVELLER says their own number or email themselves, they are sharing it: translate it exactly, every digit and character, and contact_request is "none". Otherwise contact_request is "none".
 - Spoken lines are short (1–2 sentences), natural and polite. Never invent facts. Use the Hao knowledge base, when given, to spot unfair prices or scams and to explain local rules in whisper_to_user.
 ${memoryRules(input.userLanguage.name)}
 
@@ -407,6 +408,7 @@ export const roomAgentSchema = object({
   agent_answered_itself: { type: 'boolean' },
   summary_update: object({ title: str, items: { type: 'array', items: str }, total: str }),
   memories: newMemories,
+  contact_request: { type: 'string', enum: ['none', 'phone', 'email'] },
 });
 
 // ─── Digital twin ("Hao DNA") ────────────────────────────────────────────────

@@ -46,6 +46,9 @@
     clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
     users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     scan: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/>',
+    phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
+    mail: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/>',
+    copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
     question: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
   };
   function icon(name) {
@@ -287,6 +290,7 @@
       aiFailed: '抱歉，刚才没有翻译成功，请再说一次。', busy: '请稍等，Hao 正在说话…', sendFailed: '没有发送成功，请检查网络后再说一次。',
       tooLong: '说得有点长，请分成短一点的句子。', typeInstead: '打字', closeKeyboard: '收起键盘', typePlaceholder: '输入您想说的话…', send: '发送',
       changeLanguage: '更换语言',
+      contactPhone: '电话号码', contactEmail: '邮箱', copy: '复制', copied: '已复制', call: '拨打', email: '发邮件',
     },
     en: {
       sub: 'Live interpreter', hello: 'Hello!', intro: 'A traveller would like to talk with you. Hao will interpret in real time.',
@@ -303,6 +307,7 @@
       aiFailed: 'Sorry, that didn’t translate. Please say it again.', busy: 'One moment, Hao is speaking…', sendFailed: 'That didn’t send. Check your connection and try again.',
       tooLong: 'That was a bit long. Try shorter sentences.', typeInstead: 'Type', closeKeyboard: 'Hide keyboard', typePlaceholder: 'Type what you want to say…', send: 'Send',
       changeLanguage: 'Change language',
+      contactPhone: 'Phone number', contactEmail: 'Email', copy: 'Copy', copied: 'Copied', call: 'Call', email: 'Email',
     },
   };
 
@@ -441,8 +446,31 @@
       bars.forEach(function (bar) { bar.style.height = (6 + Number(bar.dataset.h) * value * 26) + 'px'; });
     }
 
+    // The traveller chose to share their phone number or email: show it so it's easy to save.
+    function contactCard(contact) {
+      var phone = contact.kind === 'phone';
+      var value = String(contact.value || '');
+      var link = phone ? 'tel:' + value.replace(/[^\d+]/g, '') : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? 'mailto:' + value : null;
+      var copyLabel = el('span', { text: s.copy });
+      return el('div', { class: 'contact-card' }, [
+        el('div', { class: 'contact-label' }, [icon(phone ? 'phone' : 'mail'), el('span', { text: phone ? s.contactPhone : s.contactEmail })]),
+        el('p', { class: 'contact-value', text: value }),
+        el('div', { class: 'msg-actions' }, [
+          el('button', {
+            class: 'msg-action', type: 'button',
+            onclick: function () {
+              if (!navigator.clipboard) return;
+              navigator.clipboard.writeText(value).then(function () { copyLabel.textContent = s.copied; }).catch(function () {});
+            },
+          }, [icon('copy'), copyLabel]),
+          link ? el('a', { class: 'msg-action', href: link }, [icon(phone ? 'phone' : 'mail'), el('span', { text: phone ? s.call : s.email })]) : null,
+        ]),
+      ]);
+    }
+
     function drawCaptions() {
       var nodes = captions.map(function (c) {
+        if (c.contact) return contactCard(c.contact);
         if (c.speaker === 'LOCAL') {
           return el('div', { class: 'msg-me' }, [el('p', { text: c.text })]);
         }

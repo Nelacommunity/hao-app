@@ -9,7 +9,7 @@ import '@/lib/supabase-storage';
 import { supabase } from '@/lib/supabase';
 
 export type { Story };
-export type StoryEvent = 'view' | 'complete' | 'skip' | 'save' | 'action_tap' | 'ask_more' | 'hide';
+export type StoryEvent = 'view' | 'complete' | 'skip' | 'save' | 'action_tap' | 'ask_more' | 'hide' | 'quiz_right' | 'quiz_wrong' | 'tried' | 'want_to_try';
 export type DiscoverFeed = { day: string; city: string; stories: Story[] };
 
 const FEED_KEY = 'hao.discover.feed';

@@ -113,6 +113,8 @@ export type PlaceText = { name: string; address: string; type: string; tags: str
 export type Transcript = { text: string; language: string };
 
 export type RoomAlertType = 'allergy' | 'price' | 'scam' | 'budget';
+/** Contact details the traveller can choose to share in a conversation (WeChat comes later). */
+export type ContactKind = 'phone' | 'email';
 
 export type RoomAgentTurn = {
   /** Spoken to the other person (the one who did not just speak), in their language. */
@@ -126,6 +128,11 @@ export type RoomAgentTurn = {
   summary_update: { title: string; items: string[]; total: string } | null;
   /** Long-term memories worth saving for the user. */
   memories: NewMemory[];
+  /**
+   * Someone wants the traveller's phone number or email. Hao never knows them: the traveller's phone asks
+   * them whether to share, and only then is it sent.
+   */
+  contact_request: ContactKind | null;
 };
 
 export type RoomTurnLine = { speaker: 'USER' | 'LOCAL' | 'AGENT'; to?: 'USER' | 'LOCAL'; text: string };

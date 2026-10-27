@@ -62,7 +62,7 @@ async function loadHistory(db: Db, before: Date): Promise<FeedHistory> {
   return history;
 }
 
-const FEED_COLUMNS = 'id, type, city, nationality, audience, language, title, slides, action, place_id, topics, valid_until, attribution, created_at';
+const FEED_COLUMNS = 'id, type, city, nationality, audience, language, title, slides, action, place_id, topics, valid_until, attribution, interaction, created_at';
 
 /** Today's Discover set for the signed-in user (RLS limits reads to approved, current stories). */
 export async function discoverFeed(
@@ -132,6 +132,9 @@ export function describeStory(ctx: { story: Story; sources: StorySource[] }) {
   return [
     `The user opened this Discover story and wants to know more: "${story.title}" (${story.type.replace(/_/g, ' ')}).`,
     ...story.slides.map((s, i) => `Slide ${i + 1}: ${s.heading}. ${s.body}`),
+    story.interaction?.quiz
+      ? `The story's quiz: ${story.interaction.quiz.question} Answer: ${story.interaction.quiz.choices[story.interaction.quiz.answer]}. ${story.interaction.quiz.why}`
+      : '',
     sources.length ? 'Facts the story was written from (answer from these first; say so if something is not covered):' : '',
     ...sources.map((s) => `- [${s.kind}${s.ref ? `: ${s.ref}` : ''}] ${s.facts}`),
   ]

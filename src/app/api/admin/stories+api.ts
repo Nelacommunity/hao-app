@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   if ('error' in a) return a.error;
   const { data, error } = await a.service
     .from('stories')
-    .select('id, type, city, nationality, audience, language, title, slides, action, topics, sources, created_at, generated_by_model, attribution')
+    .select('id, type, city, nationality, audience, language, title, slides, action, topics, sources, created_at, generated_by_model, attribution, interaction')
     .eq('status', 'draft')
     .order('created_at', { ascending: true })
     .limit(100);

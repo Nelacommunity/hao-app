@@ -1,18 +1,33 @@
 // Writes one night's Discover stories for one city and language from grounded facts. Pure apart from the
 // injected model and illustrator, so the generate-stories Edge Function and the unit tests (with mocks)
 // run exactly the same code. Only .ts imports from this folder and shared/places (Deno loads it too).
-import { COMING_UP_DAYS, DEDUPE_DAYS, IMAGE_CALL_COST, MIN_GROUP_SIZE, STORIES_PER_RUN, VALID_DAYS, WIKIPEDIA_PER_RUN } from './config.ts';
+import { Countries } from '../places/countries.ts';
+import {
+  COMING_UP_DAYS,
+  DEDUPE_DAYS,
+  HOME_NATIONALITIES_PER_RUN,
+  IMAGE_CALL_COST,
+  MIN_GROUP_SIZE,
+  PAINTINGS_PER_RUN,
+  STORIES_PER_RUN,
+  VALID_DAYS,
+  WIKIPEDIA_PER_RUN,
+} from './config.ts';
 import { dietTags } from './diet.ts';
-import type { FactBundle, HolidayFact, LovedFact, PlaceFact, TopicRow, WeatherDay, WikiFact } from './facts.ts';
+import { ARTICLE_CATEGORIES, type FactBundle, type HolidayFact, type LovedFact, type PlaceFact, type TopicRow, type WeatherDay, type WikiFact } from './facts.ts';
 import { illustrationPrompt, storySystemPrompt, storyUserPrompt } from './prompt.ts';
 import {
   AUTO_APPROVED_TYPES,
   PLACE_TYPES,
+  QUIZ_FIRST_TYPES,
+  QUIZ_LAST_TYPES,
   STORY_TYPES,
   parseGenerated,
   storySchema,
   type Audience,
   type ImageKind,
+  type Interaction,
+  type Quiz,
   type Slide,
   type StoryAction,
   type StorySource,
@@ -21,8 +36,8 @@ import {
 
 export { DEDUPE_DAYS };
 
-/** Writes one story's text. Returns the raw model output (JSON expected). */
-export type StoryModel = { name: string; generate: (input: { system: string; prompt: string }) => Promise<string> };
+/** Writes one story's text. Returns the raw model output (JSON expected; with a quiz when `quiz`). */
+export type StoryModel = { name: string; generate: (input: { system: string; prompt: string; quiz: boolean }) => Promise<string> };
 /** Makes an illustration and returns its public https URL (or null when it couldn't). */
 export type Illustrator = { generate: (prompt: string, key: string) => Promise<string | null> };
 /** Model calls allowed this run; shared across cities so the whole run has one limit. */
@@ -42,6 +57,10 @@ export type GenerationInput = {
   loved: LovedFact[];
   /** Wikipedia articles fetched for tonight's culture topics (see wikipediaTopics). */
   wikipedia?: WikiFact[];
+  /** Articles about famous paintings, each with the painting's picture (see paintingTopics). */
+  paintings?: WikiFact[];
+  /** Articles linking a country with China, for travellers from there (see homeTopics). */
+  home?: WikiFact[];
   model: StoryModel;
   illustrate?: Illustrator;
   budget: Budget;
@@ -67,6 +86,7 @@ export type NewStory = {
   valid_until: string;
   generated_by_model: string;
   attribution: string | null;
+  interaction: Interaction | null;
 };
 
 export type GenerationError = { city: string; language: string; type: StoryType; key: string; error: string; output?: string };
@@ -88,6 +108,10 @@ type Candidate = {
   illustration?: string;
   /** Credit shown on the story, e.g. for Wikipedia text. */
   attribution?: string;
+  /** Something to try in China ("Roujiamo"): the story asks "Tried it / Want to try". */
+  tried?: string;
+  /** Not written about twice in one night, even as different types (an article, a dish, a craft). */
+  distinct?: boolean;
   audience: Audience;
   nationality: string | null;
   placeId: string | null;
@@ -139,13 +163,45 @@ function photoSlides(p: PlaceFact, slides: number) {
 
 const noImages = (slides: number): Candidate['images'] => Array.from({ length: slides }, () => ({ url: null, kind: 'none' as ImageKind }));
 
-/** Wikipedia topics worth fetching tonight: enabled, with an article, not written about recently, rotated daily. */
-export function wikipediaTopics(o: { topics: TopicRow[]; recentKeys: Set<string>; city: string; now: Date; limit?: number }) {
+type TopicPick = { topics: TopicRow[]; recentKeys: Set<string>; city: string; now: Date; limit?: number };
+
+/** Enabled topics with an article in these categories, not written about recently, rotated daily. */
+function freshArticleTopics(o: TopicPick, categories: readonly string[], keyOf: (t: TopicRow) => string) {
   const seed = `${o.city}:${chinaDate(o.now)}`;
-  const fresh = o.topics.filter((t) => t.enabled && t.wikipedia && !o.recentKeys.has(t.id) && !o.recentKeys.has(`wiki:${t.wikipedia}`));
-  return shuffle(fresh, seed, (t) => t.id)
+  const fresh = o.topics.filter((t) => t.enabled && t.wikipedia && categories.includes(t.category) && !o.recentKeys.has(t.id) && !o.recentKeys.has(keyOf(t)));
+  return shuffle(fresh, seed, (t) => t.id);
+}
+
+/** Culture and festival articles worth fetching tonight. */
+export function wikipediaTopics(o: TopicPick) {
+  return freshArticleTopics(o, ARTICLE_CATEGORIES.culture, (t) => `wiki:${t.wikipedia}`)
     .slice(0, o.limit ?? WIKIPEDIA_PER_RUN)
     .map((t) => ({ topicId: t.id, title: t.wikipedia! }));
+}
+
+/** Painting articles worth fetching tonight, with the Commons file of the painting itself. */
+export function paintingTopics(o: TopicPick) {
+  return freshArticleTopics(o, ARTICLE_CATEGORIES.painting, (t) => `painting:${t.wikipedia}`)
+    .filter((t) => t.image_file)
+    .slice(0, o.limit ?? PAINTINGS_PER_RUN)
+    .map((t) => ({ topicId: t.id, title: t.wikipedia!, imageFile: t.image_file! }));
+}
+
+/** One "your country and China" article per nationality (most users first), for those with topics. */
+export function homeTopics(o: TopicPick & { nationalities: string[] }) {
+  const fresh = freshArticleTopics(o, ARTICLE_CATEGORIES.home, (t) => `home:${t.wikipedia}`);
+  return o.nationalities
+    .slice(0, o.limit ?? HOME_NATIONALITIES_PER_RUN)
+    .flatMap((n) => {
+      const t = fresh.find((x) => x.nationality === n);
+      return t ? [{ topicId: t.id, title: t.wikipedia!, nationality: n }] : [];
+    });
+}
+
+/** The same choices in an order fixed by `seed`, so the right answer isn't always first. */
+function shuffleQuiz(quiz: Quiz, seed: string): Quiz {
+  const order = shuffle(quiz.choices.map((_, i) => i), seed, (i) => String(i));
+  return { ...quiz, choices: order.map((i) => quiz.choices[i]), answer: order.indexOf(quiz.answer) };
 }
 
 /** Every story this city could get tonight, per type, best first. */
@@ -166,26 +222,77 @@ export function candidates(input: GenerationInput): Record<StoryType, Candidate[
   const out = Object.fromEntries(STORY_TYPES.map((t) => [t, [] as Candidate[]])) as Record<StoryType, Candidate[]>;
 
   // ─── Culture from Wikipedia articles (fetched by the caller), first: the widest range of topics ───
+  // Each article can become a culture story or a "Did you know?"; pick() writes only one of them a night.
   for (const w of input.wikipedia ?? []) {
     if (!enabled.has(w.topicId) || w.extract.length < 200) continue;
     const lines = [`Topic: ${w.title}`, `From the Wikipedia article "${w.title}": ${trim(w.extract, 2200)}`];
-    const images = noImages(4);
-    if (w.image) images[0] = { url: w.image.url, kind: 'real_photo', credit: w.image.credit };
-    out.culture_moment.push({
-      type: 'culture_moment',
-      key: `wiki:${w.title}`,
+    const images = (slides: number) => {
+      const list = noImages(slides);
+      if (w.image) list[0] = { url: w.image.url, kind: 'real_photo', credit: w.image.credit };
+      return list;
+    };
+    const article = {
       topicId: w.topicId,
       facts: lines,
+      sources: [{ kind: 'wikipedia' as const, ref: w.url, facts: trim(w.extract, 2000) }],
+      extraTopics: [],
+      action: { kind: 'ask_more' as const, label: 'Ask Hao more', payload: {} },
+      // A free photo from the article is better than an illustration; only draw when there is none.
+      illustration: w.image ? undefined : illustrationPrompt({ title: w.title, zh: '', about: trim(w.extract, 200) }),
+      attribution: `Based on Wikipedia: “${w.title}” (CC BY-SA 4.0)`,
+      distinct: true,
+      audience: 'all' as const,
+      nationality: null,
+      placeId: null,
+    };
+    out.culture_moment.push({ ...article, type: 'culture_moment', key: `wiki:${w.title}`, slides: 4, images: images(4) });
+    out.did_you_know.push({ ...article, type: 'did_you_know', key: `dyk:wiki:${w.title}`, slides: 3, images: images(3) });
+  }
+
+  // ─── Famous paintings: the real artwork on every slide, zoomed across by the app ───
+  for (const w of input.paintings ?? []) {
+    // Without the painting itself there is no story: never an AI picture of a real artwork.
+    if (!enabled.has(w.topicId) || !w.image || w.extract.length < 200) continue;
+    const image = { url: w.image.url, kind: 'real_photo' as ImageKind, credit: w.image.credit };
+    out.painting.push({
+      type: 'painting',
+      key: `painting:${w.title}`,
+      topicId: w.topicId,
+      facts: [`Painting (Wikipedia article): ${w.title}`, `From the Wikipedia article "${w.title}": ${trim(w.extract, 2200)}`],
+      sources: [{ kind: 'wikipedia', ref: w.url, facts: trim(w.extract, 2000) }],
+      extraTopics: [],
+      action: { kind: 'ask_more', label: 'Ask Hao more', payload: {} },
+      slides: 4,
+      images: Array.from({ length: 4 }, () => image),
+      attribution: `Based on Wikipedia: “${w.title}” (CC BY-SA 4.0)`,
+      distinct: true,
+      audience: 'all',
+      nationality: null,
+      placeId: null,
+    });
+  }
+
+  // ─── The traveller's country and China: only shown to people from there ───
+  for (const w of input.home ?? []) {
+    const nationality = enabled.get(w.topicId)?.nationality;
+    if (!nationality || w.extract.length < 200) continue;
+    const country = Countries[nationality] ?? nationality;
+    const images = noImages(4);
+    if (w.image) images[0] = { url: w.image.url, kind: 'real_photo', credit: w.image.credit };
+    out.home_and_china.push({
+      type: 'home_and_china',
+      key: `home:${w.title}`,
+      topicId: w.topicId,
+      facts: [`The reader is from: ${country}`, `From the Wikipedia article "${w.title}": ${trim(w.extract, 2200)}`],
       sources: [{ kind: 'wikipedia', ref: w.url, facts: trim(w.extract, 2000) }],
       extraTopics: [],
       action: { kind: 'ask_more', label: 'Ask Hao more', payload: {} },
       slides: 4,
       images,
-      // A free photo from the article is better than an illustration; only draw when there is none.
-      illustration: w.image ? undefined : illustrationPrompt({ title: w.title, zh: '', about: trim(w.extract, 200) }),
       attribution: `Based on Wikipedia: “${w.title}” (CC BY-SA 4.0)`,
+      distinct: true,
       audience: 'all',
-      nationality: null,
+      nationality,
       placeId: null,
     });
   }
@@ -213,6 +320,8 @@ export function candidates(input: GenerationInput): Record<StoryType, Candidate[
       slides: 4,
       images: noImages(4),
       illustration: illustrationPrompt({ title: craft.title, zh: craft.zh, about: craft.about }),
+      tried: craft.title,
+      distinct: true,
       audience: 'all',
       nationality: null,
       placeId: null,
@@ -241,21 +350,20 @@ export function candidates(input: GenerationInput): Record<StoryType, Candidate[
         placeId: null,
       });
     } else {
-      out.culture_moment.push({
-        type: 'culture_moment',
-        key: item.id,
+      const story = {
         topicId: item.id,
         facts: lines,
         sources: [source],
         extraTopics: [],
-        action: { kind: 'ask_more', label: 'Ask Hao more', payload: {} },
-        slides: 4,
-        images: noImages(4),
+        action: { kind: 'ask_more' as const, label: 'Ask Hao more', payload: {} },
         illustration: illustrationPrompt({ title: item.title, zh: item.zh, about: item.body }),
-        audience: 'all',
+        distinct: true,
+        audience: 'all' as const,
         nationality: null,
         placeId: null,
-      });
+      };
+      out.culture_moment.push({ ...story, type: 'culture_moment', key: item.id, slides: 4, images: noImages(4) });
+      out.did_you_know.push({ ...story, type: 'did_you_know', key: `dyk:${item.id}`, slides: 3, images: noImages(3) });
     }
   }
 
@@ -289,6 +397,8 @@ export function candidates(input: GenerationInput): Record<StoryType, Candidate[
       extraTopics: [...new Set(tags)],
       action: { kind: 'find_food', label: 'Find this food near me', payload: { query: `Where can I eat ${dish.name} (${dish.nameZh}) near me?` } },
       slides: 4,
+      tried: dish.name,
+      distinct: true,
       // A dish in general, not at a real restaurant, but still no AI food pictures: colour and icon.
       images: noImages(4),
       audience: 'all',
@@ -426,23 +536,33 @@ export function candidates(input: GenerationInput): Record<StoryType, Candidate[
   return out;
 }
 
-/** The candidates to write tonight: per type, the first ones not used recently, taken round-robin across types. */
+/**
+ * The candidates to write tonight: per type, the first ones not used recently, taken round-robin across
+ * types. One story per place, and per article, dish or craft (`distinct`), a night, even across types.
+ */
 export function pick(input: GenerationInput, all: Record<StoryType, Candidate[]>): Candidate[] {
-  const queues = STORY_TYPES.map((type) => {
-    const want = input.perType?.[type] ?? STORIES_PER_RUN[type];
-    const fresh = all[type].filter((c) => !input.recentKeys.has(c.key) && !(c.placeId && input.recentKeys.has(`place:${c.placeId}`)));
-    return fresh.slice(0, want);
-  });
+  const queues = STORY_TYPES.map((type) => ({
+    want: input.perType?.[type] ?? STORIES_PER_RUN[type],
+    taken: 0,
+    next: 0,
+    list: all[type].filter((c) => !input.recentKeys.has(c.key) && !(c.placeId && input.recentKeys.has(`place:${c.placeId}`))),
+  }));
   const out: Candidate[] = [];
-  const usedPlaces = new Set<string>();
-  for (let round = 0; queues.some((q) => q.length > round); round++) {
+  const used = new Set<string>();
+  const usedKeys = (c: Candidate) => [c.placeId ? `place:${c.placeId}` : '', c.distinct ? `topic:${c.topicId}` : ''].filter(Boolean);
+  for (let progress = true; progress; ) {
+    progress = false;
     for (const q of queues) {
-      const c = q[round];
-      if (!c) continue;
-      // One story per place per night, even across types.
-      if (c.placeId && usedPlaces.has(c.placeId)) continue;
-      if (c.placeId) usedPlaces.add(c.placeId);
-      out.push(c);
+      if (q.taken >= q.want) continue;
+      while (q.next < q.list.length) {
+        const c = q.list[q.next++];
+        if (usedKeys(c).some((k) => used.has(k))) continue;
+        usedKeys(c).forEach((k) => used.add(k));
+        out.push(c);
+        q.taken++;
+        progress = true;
+        break;
+      }
     }
   }
   return out;
@@ -461,6 +581,7 @@ export async function generateStories(input: GenerationInput): Promise<Generatio
   const validFrom = input.now.toISOString();
 
   for (const c of pick(input, candidates(input))) {
+    const quizAt = QUIZ_FIRST_TYPES.includes(c.type) ? 'start' : QUIZ_LAST_TYPES.includes(c.type) ? 'end' : null;
     const fail = (error: string, output?: string) => {
       result.rejected++;
       result.errors.push({ city: input.city.city, language: input.language.code, type: c.type, key: c.key, error, output: output?.slice(0, 2000) });
@@ -479,11 +600,12 @@ export async function generateStories(input: GenerationInput): Promise<Generatio
         slides: c.slides,
         actionLabel: c.action.label,
         facts: c.facts,
+        quiz: quizAt,
         retryError: story && !story.ok ? story.error : undefined,
       });
       try {
-        output = await input.model.generate({ system, prompt });
-        story = parseGenerated(output);
+        output = await input.model.generate({ system, prompt, quiz: !!quizAt });
+        story = parseGenerated(output, { quiz: !!quizAt });
       } catch (e) {
         story = { ok: false, error: `Model call failed: ${(e as Error).message}` };
       }
@@ -509,6 +631,7 @@ export async function generateStories(input: GenerationInput): Promise<Generatio
       image_credit: images[i]?.url ? (images[i].credit ?? null) : null,
     }));
     const validUntil = new Date(input.now.getTime() + VALID_DAYS[c.type] * DAY).toISOString();
+    const quiz = quizAt && story.story.quiz ? shuffleQuiz(story.story.quiz, `${input.city.city}:${c.key}`) : null;
     const row: NewStory = {
       type: c.type,
       city: input.city.city,
@@ -526,6 +649,7 @@ export async function generateStories(input: GenerationInput): Promise<Generatio
       valid_until: validUntil,
       generated_by_model: input.model.name,
       attribution: c.attribution ?? null,
+      interaction: quiz || c.tried ? { quiz, quiz_at: quiz ? quizAt : null, tried: c.tried ?? null } : null,
     };
 
     // The same check the feed runs, so nothing invalid is ever stored.

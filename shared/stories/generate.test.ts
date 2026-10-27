@@ -5,8 +5,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { FactBundle, LovedFact, PlaceFact, TopicRow, WikiFact } from './facts.ts';
-import { generateStories, pick, candidates, recentKeysFrom, wikipediaTopics, type GenerationInput, type StoryModel } from './generate.ts';
-import type { StoryType } from './schema.ts';
+import { generateStories, pick, candidates, homeTopics, paintingTopics, recentKeysFrom, wikipediaTopics, type GenerationInput, type StoryModel } from './generate.ts';
+import { STORY_TYPES, type StoryType } from './schema.ts';
 
 const FACTS: FactBundle = {
   culture: [
@@ -86,26 +86,31 @@ const LOVED: LovedFact = {
   likes: 5,
 };
 
-const VALID = (slides = 3) =>
+const QUIZ = { question: '[PLACEHOLDER] Which is right?', choices: ['[PLACEHOLDER] right', '[PLACEHOLDER] wrong one', '[PLACEHOLDER] wrong two'], answer: 0, why: '[PLACEHOLDER] because.' };
+
+const VALID = (slides = 3, quiz = false) =>
   JSON.stringify({
     title: '[PLACEHOLDER] title',
     slides: Array.from({ length: slides }, (_, i) => ({ heading: `[PLACEHOLDER] ${i + 1}`, body: '[PLACEHOLDER] A short body.' })),
     action_label: 'Ask Hao more',
+    ...(quiz ? { quiz: QUIZ } : {}),
   });
 
 /** A model that answers from a script of outputs, recording every prompt it got. */
-function mockModel(reply: (prompt: string, call: number) => string): StoryModel & { prompts: string[] } {
+function mockModel(reply: (prompt: string, call: number, quiz: boolean) => string): StoryModel & { prompts: string[] } {
   const prompts: string[] = [];
   return {
     name: 'mock-model',
     prompts,
-    generate: async ({ prompt }) => {
+    generate: async ({ prompt, quiz }) => {
       prompts.push(prompt);
-      return reply(prompt, prompts.length);
+      return reply(prompt, prompts.length, quiz);
     },
   };
 }
 const slidesAsked = (prompt: string) => Number(/SLIDES: exactly (\d)/.exec(prompt)?.[1] ?? 3);
+/** Answers every prompt validly, with a quiz when one is asked for. */
+const goodModel = () => mockModel((p, _, quiz) => VALID(slidesAsked(p), quiz));
 
 function input(over: Partial<GenerationInput> = {}): GenerationInput {
   return {
@@ -122,7 +127,7 @@ function input(over: Partial<GenerationInput> = {}): GenerationInput {
     weather: [{ date: '2026-12-11', dayWeather: '晴', nightWeather: '晴', dayTemp: 3, nightTemp: -6, wind: '北' }],
     spotlight: [PLACE],
     loved: [LOVED],
-    model: mockModel((p) => VALID(slidesAsked(p))),
+    model: goodModel(),
     budget: { maxCalls: 100, used: 0 },
     autoApproveAll: false,
     ...over,
@@ -142,7 +147,7 @@ describe('generation', () => {
   });
 
   it('puts only provided facts in the prompt and asks for JSON only', async () => {
-    const model = mockModel((p) => VALID(slidesAsked(p)));
+    const model = goodModel();
     await generateStories(input({ model }));
     const holiday = model.prompts.find((p) => p.includes('STORY TYPE: coming_up'))!;
     assert.match(holiday, /Starts in 11 days, on 2026-12-22/);
@@ -164,7 +169,7 @@ describe('generation', () => {
 
 describe('validation', () => {
   it('retries once with the error, then keeps a valid answer', async () => {
-    const model = mockModel((p, n) => (n === 1 ? '{"title": "x"}' : VALID(slidesAsked(p))));
+    const model = mockModel((p, n, quiz) => (n === 1 ? '{"title": "x"}' : VALID(slidesAsked(p), quiz)));
     const { stories, errors } = await generateStories(input({ model, perType: { phrase_of_the_day: 1, ...zero(['phrase_of_the_day']) } }));
     assert.equal(stories.length, 1);
     assert.equal(errors.length, 0);
@@ -279,7 +284,7 @@ describe('wikipedia stories', () => {
     input({ topics: [...TOPICS, WIKI_TOPIC], wikipedia: [WIKI], perType: { culture_moment: 1, ...zero(['culture_moment']) }, ...extra });
 
   it('writes culture stories from the article, credited, with its free photo', async () => {
-    const model = mockModel((p) => VALID(slidesAsked(p)));
+    const model = goodModel();
     const { stories } = await generateStories(only({ model }));
     const [story] = stories;
     assert.equal(story.topics[0], 'wiki:lion-dance');
@@ -312,7 +317,7 @@ describe('wikipedia stories', () => {
 
 describe('learn how', () => {
   it('teaches a craft from its curated steps and opens the guide to learn it', async () => {
-    const model = mockModel((p) => VALID(slidesAsked(p)));
+    const model = goodModel();
     const { stories } = await generateStories(input({ model, perType: { learn_how: 1, ...zero(['learn_how']) } }));
     const [story] = stories;
     assert.equal(story.type, 'learn_how');
@@ -325,6 +330,116 @@ describe('learn how', () => {
 
 /** perType with every other type set to 0. */
 function zero(keep: StoryType[]): Partial<Record<StoryType, number>> {
-  const all: StoryType[] = ['culture_moment', 'place_spotlight', 'your_people_loved', 'food_to_try', 'phrase_of_the_day', 'etiquette_tip', 'coming_up', 'season_tip', 'learn_how'];
-  return Object.fromEntries(all.filter((t) => !keep.includes(t)).map((t) => [t, 0]));
+  return Object.fromEntries(STORY_TYPES.filter((t) => !keep.includes(t)).map((t) => [t, 0]));
 }
+
+describe('quizzes', () => {
+  it('opens a "Did you know?" with a quiz, its choices shuffled and the answer still right', async () => {
+    const { stories, errors } = await generateStories(input({ perType: { did_you_know: 1, ...zero(['did_you_know']) } }));
+    assert.deepEqual(errors, []);
+    const [story] = stories;
+    assert.equal(story.type, 'did_you_know');
+    assert.equal(story.interaction?.quiz_at, 'start');
+    const quiz = story.interaction!.quiz!;
+    assert.equal(quiz.choices[quiz.answer], QUIZ.choices[QUIZ.answer]);
+    assert.deepEqual([...quiz.choices].sort(), [...QUIZ.choices].sort());
+  });
+
+  it('ends culture stories with a quiz', async () => {
+    const { stories } = await generateStories(input({ perType: { culture_moment: 1, ...zero(['culture_moment']) } }));
+    assert.equal(stories[0].interaction?.quiz_at, 'end');
+  });
+
+  it('asks again when a quiz type comes back without one, and drops a quiz nobody asked for', async () => {
+    const model = mockModel((p, n) => VALID(slidesAsked(p), n > 1));
+    const { stories, errors } = await generateStories(input({ model, perType: { culture_moment: 1, ...zero(['culture_moment']) } }));
+    assert.deepEqual(errors, []);
+    assert.match(model.prompts[1], /rejected: quiz: missing/);
+    assert.ok(stories[0].interaction?.quiz);
+    const plain = await generateStories(input({ model: mockModel((p) => VALID(slidesAsked(p), true)), perType: { etiquette_tip: 1, ...zero(['etiquette_tip']) } }));
+    assert.equal(plain.stories[0].interaction, null);
+  });
+
+  it('rejects a quiz whose answer is not one of the choices', async () => {
+    const bad = (p: string) => JSON.stringify({ ...JSON.parse(VALID(slidesAsked(p))), quiz: { ...QUIZ, answer: 5 } });
+    const { stories, errors } = await generateStories(input({ model: mockModel(bad), perType: { did_you_know: 1, ...zero(['did_you_know']) } }));
+    assert.equal(stories.length, 0);
+    assert.match(errors[0].error, /answer must be the index/);
+  });
+
+  it('asks "Tried it / Want to try" on food and crafts, in plain English for the Hao DNA', async () => {
+    const { stories } = await generateStories(input());
+    assert.equal(stories.find((s) => s.type === 'food_to_try')?.interaction?.tried, 'Roujiamo');
+    assert.equal(stories.find((s) => s.type === 'learn_how')?.interaction?.tried, '[PLACEHOLDER] Paper cutting');
+  });
+
+  it('never writes the same topic twice in a night, even as two types', async () => {
+    const { stories } = await generateStories(input({ perType: { culture_moment: 1, did_you_know: 1, ...zero(['culture_moment', 'did_you_know']) } }));
+    assert.equal(stories.filter((s) => s.topics.includes('gongfu-tea')).length, 1);
+  });
+});
+
+const PAINTING: WikiFact = {
+  topicId: 'painting:early-spring',
+  title: '[PLACEHOLDER] Early Spring (painting)',
+  url: 'https://en.wikipedia.org/wiki/Early_Spring_(painting)',
+  extract: '[PLACEHOLDER] Early Spring is a hanging scroll by Guo Xi. '.repeat(8),
+  image: { url: 'https://example.test/story-images/wikimedia/early-spring.jpg', credit: '[PLACEHOLDER] Guo Xi · Public domain · Wikimedia Commons' },
+};
+const PAINTING_TOPIC: TopicRow = { id: 'painting:early-spring', category: 'painting', label: 'Early Spring', enabled: true, wikipedia: 'Early Spring (painting)', image_file: 'Guo Xi - Early Spring (large).jpg' };
+
+describe('paintings', () => {
+  const only = (extra: Partial<GenerationInput> = {}) =>
+    input({ topics: [...TOPICS, PAINTING_TOPIC], paintings: [PAINTING], perType: { painting: 1, ...zero(['painting']) }, ...extra });
+
+  it('shows the real painting on every slide, credited, and never draws one', async () => {
+    const illustrated: string[] = [];
+    const illustrate = { generate: async (_: string, key: string) => (illustrated.push(key), 'https://example.test/x.png') };
+    const { stories, errors } = await generateStories(only({ illustrate }));
+    assert.deepEqual(errors, []);
+    const [story] = stories;
+    assert.ok(story.slides.every((s) => s.image_url === PAINTING.image!.url && s.image_kind === 'real_photo' && s.image_credit));
+    assert.equal(story.interaction?.quiz_at, 'end');
+    assert.deepEqual(illustrated, []);
+  });
+
+  it('skips a painting without its picture', async () => {
+    const { stories } = await generateStories(only({ paintings: [{ ...PAINTING, image: undefined }] }));
+    assert.equal(stories.length, 0);
+  });
+
+  it('fetches only paintings that name their Commons file', () => {
+    const topics = [PAINTING_TOPIC, { ...PAINTING_TOPIC, id: 'painting:no-file', image_file: null }, WIKI_TOPIC];
+    const picked = paintingTopics({ topics, recentKeys: new Set(), city: 'Beijing', now: new Date(), limit: 5 });
+    assert.deepEqual(picked, [{ topicId: 'painting:early-spring', title: 'Early Spring (painting)', imageFile: 'Guo Xi - Early Spring (large).jpg' }]);
+    assert.ok(!wikipediaTopics({ topics, recentKeys: new Set(), city: 'Beijing', now: new Date() }).some((t) => t.topicId.startsWith('painting:')));
+  });
+});
+
+const HOME: WikiFact = {
+  topicId: 'home:tz-tazara',
+  title: '[PLACEHOLDER] TAZARA Railway',
+  url: 'https://en.wikipedia.org/wiki/TAZARA_Railway',
+  extract: '[PLACEHOLDER] The TAZARA Railway links Tanzania and Zambia and was built with China. '.repeat(5),
+};
+const HOME_TOPICS: TopicRow[] = [
+  { id: 'home:tz-tazara', category: 'home', label: 'TAZARA', enabled: true, wikipedia: 'TAZARA Railway', nationality: 'TZ' },
+  { id: 'home:ke', category: 'home', label: 'Kenya and China', enabled: true, wikipedia: 'China–Kenya relations', nationality: 'KE' },
+  { id: 'home:fr', category: 'home', label: 'France and China', enabled: true, wikipedia: 'China–France relations', nationality: 'FR' },
+];
+
+describe('your country and China', () => {
+  it('writes for the topic\'s nationality only, naming the country in the facts', async () => {
+    const model = goodModel();
+    const { stories } = await generateStories(input({ model, topics: [...TOPICS, ...HOME_TOPICS], home: [HOME], perType: { home_and_china: 1, ...zero(['home_and_china']) } }));
+    const [story] = stories;
+    assert.equal(story.type, 'home_and_china');
+    assert.equal(story.nationality, 'TZ');
+    assert.match(model.prompts[0], /The reader is from: Tanzania/);
+  });
+
+  it('fetches one article per nationality with users, most users first', () => {
+    const picked = homeTopics({ topics: HOME_TOPICS, recentKeys: new Set(), city: 'Beijing', now: new Date(), nationalities: ['KE', 'TZ', 'NG'] });
+    assert.deepEqual(picked.map((p) => p.nationality), ['KE', 'TZ']);
+  });
+});

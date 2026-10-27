@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import type { Slide, StorySource, StoryType } from '@shared/stories/schema';
+import type { Interaction, Slide, StorySource, StoryType } from '@shared/stories/schema';
 
 import { StoryTypeMeta } from '@/components/story-view';
 import { Colors, Radius, Spacing, themed } from '@/constants/theme';
@@ -23,6 +23,7 @@ type Draft = {
   created_at: string;
   generated_by_model: string;
   attribution: string | null;
+  interaction: Interaction | null;
 };
 
 async function call(method: 'GET' | 'POST', body?: unknown) {
@@ -112,6 +113,19 @@ export default function AdminStoriesScreen() {
                 <Text style={styles.body}>{s.body}</Text>
               </View>
             ))}
+            {item.interaction?.quiz ? (
+              <View style={styles.slide}>
+                <Text style={styles.heading}>
+                  {item.interaction.quiz_at === 'start' ? t('Quiz, before the slides') : t('Quiz, after the slides')}: {item.interaction.quiz.question}
+                </Text>
+                {item.interaction.quiz.choices.map((c, i) => (
+                  <Text key={i} style={styles.body}>
+                    {i === item.interaction?.quiz?.answer ? '✓' : '·'} {c}
+                  </Text>
+                ))}
+                <Text style={styles.source}>{item.interaction.quiz.why}</Text>
+              </View>
+            ) : null}
             <Text style={styles.sourcesTitle}>{t('Written from')}</Text>
             {item.sources.map((s, i) => (
               <Text key={i} style={styles.source} numberOfLines={4}>

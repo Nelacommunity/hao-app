@@ -20,13 +20,15 @@ import type { StoryAction } from '@shared/stories/schema';
 
 import { PhraseCard, PlaceCard } from '@/components/discover-cards';
 import { DiscoverRail, GuideCaption } from '@/components/discover-rail';
-import { StoryView } from '@/components/story-view';
+import { StoryView, storyPages, type TriedAnswer } from '@/components/story-view';
 import { Colors, Radius, Spacing, themed } from '@/constants/theme';
 import { culturePlaces, fetchLikes, itemKey, mixFeed, phraseOfTheDay, setLiked, shareItem, useHaoGuide, type DiscoverItem } from '@/lib/discover';
+import { useAuth } from '@/lib/auth';
 import { useT } from '@/lib/i18n';
 import { useTravellerLanguage } from '@/lib/language-store';
 import { useCurrentLocation } from '@/lib/location';
 import { navigateTo } from '@/lib/place-actions';
+import { useStoryMode } from '@/lib/story-mode';
 import { fetchSavedPlaceIds, setPlaceSaved } from '@/lib/saved-places';
 import { ASK_MORE, openChatWith, PRACTICE, runStoryAction } from '@/lib/story-actions';
 import {
@@ -73,6 +75,8 @@ export default function DiscoverScreen() {
   const [savedPlaces, setSavedPlaces] = useState<Set<string>>(new Set());
   const [likes, setLikes] = useState<{ counts: Record<string, number>; mine: Set<string> }>({ counts: {}, mine: new Set() });
   const guide = useHaoGuide();
+  const [mode, setMode] = useStoryMode();
+  const { profile, updateProfile } = useAuth();
   const listRef = useRef<FlatList<Item>>(null);
 
   // A new set when the China date changes (checked whenever the tab comes back into view).
@@ -177,7 +181,7 @@ export default function DiscoverScreen() {
         id: story.id,
         since: Date.now(),
         lastSlide: 0,
-        slides: story.slides.length,
+        slides: storyPages(story).length,
         completed: false,
       };
       logStoryEvent(story.id, 'view', { slide: 0 });
@@ -197,8 +201,13 @@ export default function DiscoverScreen() {
   }, [focused, active, enterStory, leaveStory]);
 
   // Hao stops talking when the user swipes to another item or leaves the tab.
-  const { stop: stopGuide } = guide;
+  const { stop: stopGuide, play: playGuide } = guide;
   useEffect(() => stopGuide(), [active, focused, stopGuide]);
+  // Listen mode: places and phrases are explained by Hao as they come up (stories read themselves).
+  const activeEntry = items[active];
+  useEffect(() => {
+    if (mode === 'listen' && focused && activeEntry && activeEntry.kind !== 'end' && activeEntry.kind !== 'story') playGuide(activeEntry);
+  }, [mode, focused, activeEntry, playGuide]);
 
   const onSlideChange = useCallback((story: Story, slide: number) => {
     const v = visit.current;
@@ -298,6 +307,17 @@ export default function DiscoverScreen() {
     setPlaceSaved(id, next).catch(() => apply(!next));
   };
 
+  /** "Tried it, loved it" goes into what the user loves, "Want to try" into what they want to do. */
+  const onTried = (story: Story, answer: TriedAnswer) => {
+    const subject = story.interaction?.tried;
+    if (!subject || !profile) return;
+    logStoryEvent(story.id, answer === 'loved' ? 'tried' : 'want_to_try');
+    // At most 20 each (the database limit): the newest replace the oldest.
+    const add = (list: string[], item: string) => [...list.filter((x) => x.toLowerCase() !== item.toLowerCase()), item].slice(-20);
+    const change = answer === 'loved' ? { loves: add(profile.loves, subject.toLowerCase()) } : { wants: add(profile.wants, `try ${subject.toLowerCase()}`) };
+    updateProfile(change).catch(() => {});
+  };
+
   /** "Ask Hao more" from the voice guide: the chat, with this item as the question. */
   const askMore = (item: DiscoverItem) => {
     guide.stop();
@@ -323,7 +343,7 @@ export default function DiscoverScreen() {
     );
   };
 
-  const onLayout = (e: LayoutChangeEvent) => setHeight(Math.round(e.nativeEvent.layout.height));
+  const onLayout = (e: LayoutChangeEvent) => setHeight(e.nativeEvent.layout.height);
   const topInset = insets.top + HEADER;
   const onStory = items.length > 0 && active < items.length - 1;
   const activeItem = onStory ? (items[active] as DiscoverItem) : null;
@@ -382,6 +402,9 @@ export default function DiscoverScreen() {
                 height={height}
                 topInset={topInset}
                 active={focused && index === active}
+                narrate={mode === 'listen'}
+                onQuiz={(right) => logStoryEvent(item.story.id, right ? 'quiz_right' : 'quiz_wrong')}
+                onTried={(answer) => onTried(item.story, answer)}
                 onNextStory={() => scrollTo(index + 1)}
                 onPrevStory={() => scrollTo(index - 1)}
                 onSlideChange={(slide) => onSlideChange(item.story, slide)}
@@ -417,6 +440,21 @@ export default function DiscoverScreen() {
         </Text>
         {offline ? <Text style={styles.offline}>{t('Offline · saved stories from earlier')}</Text> : null}
       </View>
+      {hasFeed ? (
+        <Pressable
+          onPress={() => {
+            guide.stop();
+            setMode(mode === 'listen' ? 'read' : 'listen');
+          }}
+          hitSlop={8}
+          style={[styles.modeToggle, { top: insets.top + 4 }, !onStory && styles.modeTogglePlain]}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: mode === 'listen' }}
+          accessibilityLabel={t('Hao reads stories aloud')}>
+          <Ionicons name={mode === 'listen' ? 'headset' : 'book-outline'} size={15} color={onStory ? '#fff' : Colors.ink} />
+          <Text style={[styles.modeText, !onStory && { color: Colors.ink }]}>{mode === 'listen' ? t('Listening') : t('Reading')}</Text>
+        </Pressable>
+      ) : null}
 
       {activeItem ? (
         <GuideCaption
@@ -551,6 +589,19 @@ const styles = themed(() => StyleSheet.create({
     textShadowRadius: 6,
   },
   headerTitlePlain: { color: Colors.ink, textShadowColor: 'transparent' },
+  modeToggle: {
+    position: 'absolute',
+    right: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: Radius.pill,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  modeTogglePlain: { backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.line },
+  modeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   offline: {
     color: '#fff',
     fontSize: 12,

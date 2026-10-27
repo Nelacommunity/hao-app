@@ -1,6 +1,6 @@
 // WebSocket protocol shared by the rooms server and the app. The vanilla web join page
 // (server/public/join.js) speaks the same messages; keep it in sync when changing this file.
-import type { AudioInput, LanguageTarget, Preferences, RoomAlertType, RoomSpeaker } from '../ai/types';
+import type { AudioInput, ContactKind, LanguageTarget, Preferences, RoomAlertType, RoomSpeaker } from '../ai/types';
 import { tx } from '../i18n/tx';
 
 export type RoomType = 'conversation' | 'broadcast';
@@ -33,6 +33,8 @@ export type ConvCaption = {
   to?: 'USER' | 'LOCAL';
   text: string;
   at: number;
+  /** Contact details the traveller chose to share: the guest page shows them as a card to copy. */
+  contact?: { kind: ContactKind; value: string };
 };
 export type RoomSummary = { title: string; items: string[]; total: string };
 export type RoomAlert = { type: RoomAlertType; message: string; at: number };

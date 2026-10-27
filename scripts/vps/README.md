@@ -37,13 +37,13 @@ again with `supabase_admin` as the user in `NEW_DB_URL`.
 **Edge Function.** `supabase functions deploy` doesn't work with self-hosted Supabase; it runs whatever is
 in `supabase/docker/volumes/functions/` on the VPS. The deploy script copies `shared/` there as `_shared/` and
 points the function's `../../../shared/...` imports at it, so `docker-compose.yml` needs no change. Once, on the VPS:
-- Add its secrets to the VPS `.env` and pass them in the `functions` service's `environment`: `GEMINI_API_KEY`,
-  `AMAP_KEY`, and any of `GEMINI_STORY_MODEL`, `STORIES_MAX_CALLS`, `STORIES_AUTO_APPROVE_ALL`,
-  `STORIES_AI_IMAGES`, `GEMINI_IMAGE_MODEL`, `WIKIMEDIA_CONTACT`.
+- Add its secrets to the VPS `.env` and pass them in the `functions` service's `environment`: `QWEN_API_KEY`,
+  `AMAP_KEY`, and any of `QWEN_BASE_URL`, `QWEN_STORY_MODEL`, `STORIES_MAX_CALLS`, `STORIES_AUTO_APPROVE_ALL`,
+  `STORIES_AI_IMAGES`, `QWEN_IMAGE_MODEL`, `WIKIMEDIA_CONTACT`.
 
 Then, after each change, set `VPS_SSH` and `VPS_DOCKER_DIR` in `.env.vps.local` and run
 `scripts/vps/deploy-function.sh`. It copies `supabase/functions/*` and `shared/`, restarts the container and
-checks every function boots. A full test run (calls Gemini):
+checks every function boots. A full test run (calls Qwen):
 `curl -X POST $NEW_API_URL/functions/v1/generate-stories -H "Authorization: Bearer $NEW_SERVICE_KEY" -d '{"dry_run":true}'`.
 
 **Auth.** In the VPS `.env`: `SITE_URL` and `ADDITIONAL_REDIRECT_URLS` (copy them from the hosted

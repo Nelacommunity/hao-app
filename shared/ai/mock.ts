@@ -218,6 +218,7 @@ async function mockRoomTurn(input: RoomAgentInput): Promise<RoomAgentTurn> {
       agent_answered_itself: false,
       summary_update: { title: 'Order', items: ['Kung Pao chicken ×1 (no peanuts)'], total: '' },
       memories: [],
+      contact_request: null,
     };
   }
   const price = /(\d+)/.exec(input.said)?.[1];
@@ -229,5 +230,6 @@ async function mockRoomTurn(input: RoomAgentInput): Promise<RoomAgentTurn> {
     agent_answered_itself: false,
     summary_update: price ? { title: 'Order', items: ['Kung Pao chicken ×1 (no peanuts)'], total: `¥${price}` } : null,
     memories: price ? [{ kind: 'said', text: `The restaurant said the order costs ¥${price}` }] : [],
+    contact_request: /电话|手机号|号码/.test(input.said) ? 'phone' : /邮箱|email/i.test(input.said) ? 'email' : null,
   };
 }

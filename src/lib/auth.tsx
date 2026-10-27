@@ -17,7 +17,7 @@ type AuthContextValue = {
     changes: Partial<
       Pick<
         Profile,
-        'display_name' | 'language_code' | 'language_name' | 'preferences' | 'memory_enabled' | 'nationality' | 'home_city' | 'university' | 'city' | 'share_visits' | 'traveller_type' | 'loves' | 'wants' | 'twin_completed_at'
+        'display_name' | 'language_code' | 'language_name' | 'preferences' | 'memory_enabled' | 'nationality' | 'home_city' | 'university' | 'city' | 'share_visits' | 'traveller_type' | 'loves' | 'wants' | 'twin_completed_at' | 'contact_phone' | 'contact_email'
       >
     >
   ) => Promise<void>;

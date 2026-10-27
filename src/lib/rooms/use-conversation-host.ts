@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { AudioInput, LanguageTarget, RoomSpeaker, RoomTurnLine } from '@shared/ai/types';
+import type { AudioInput, ContactKind, LanguageTarget, RoomSpeaker, RoomTurnLine } from '@shared/ai/types';
 import type { ConvCaption, PhaseState, RoomAlert, RoomContext, RoomSummary, ServerMessage } from '@shared/rooms/protocol';
 import { cleanName, type GuestEnvelope } from '@shared/rooms/realtime';
 
@@ -46,6 +46,8 @@ export function useConversationHost({ code, userLanguage, userName, initialConte
   const [ended, setEnded] = useState(false);
   // What the guest asked to be called on the join page (from their messages; presence also carries it).
   const [messageName, setMessageName] = useState<string | null>(null);
+  // Someone asked for the user's phone or email: the user decides on screen whether to share it.
+  const [contactRequest, setContactRequest] = useState<{ id: string; kind: ContactKind } | null>(null);
 
   // Mutable room state the async turn pipeline reads (refs avoid stale closures).
   const r = useRef({
@@ -119,7 +121,7 @@ export function useConversationHost({ code, userLanguage, userName, initialConte
   );
 
   const runTurn = useCallback(
-    async (speaker: RoomSpeaker, input: { audio?: AudioInput; text?: string }) => {
+    async (speaker: RoomSpeaker, input: { audio?: AudioInput; text?: string }, sharing = false) => {
       const s = r.current;
       if (s.ended) return;
       const busy = s.phase.phase === 'thinking' || s.phase.phase === 'speaking' || (s.phase.phase === 'listening' && s.phase.by !== speaker);
@@ -203,6 +205,8 @@ export function useConversationHost({ code, userLanguage, userName, initialConte
           s.summary = turn.summary_update;
           setSummary(turn.summary_update);
         }
+        // A turn that shares (or declines) contact details never asks again.
+        if (turn.contact_request && !sharing) setContactRequest({ id: uid(), kind: turn.contact_request });
 
         // What Hao says aloud, and to whom (the line for the other person may already be playing).
         if (!spokenEarly) {
@@ -297,6 +301,30 @@ export function useConversationHost({ code, userLanguage, userName, initialConte
     return () => clearInterval(id);
   }, [end]);
 
+  /**
+   * The user said yes: Hao tells them in their language (`line`, the user's words, e.g. "Here's my number: …"),
+   * then the exact value appears on their page as a card they can copy.
+   */
+  const shareContact = useCallback(
+    async (kind: ContactKind, value: string, line: string) => {
+      setContactRequest(null);
+      await runTurn('USER', { text: line }, true);
+      if (r.current.ended) return;
+      const card = { speaker: 'AGENT' as const, to: 'LOCAL' as const, text: value, contact: { kind, value } };
+      caption('host', card);
+      caption('local', card);
+    },
+    [caption, runTurn]
+  );
+  /** The user said no: Hao turns them down politely (`line`, e.g. "Sorry, I'd rather not share my number."). */
+  const declineContact = useCallback(
+    (line: string) => {
+      setContactRequest(null);
+      return runTurn('USER', { text: line }, true);
+    },
+    [runTurn]
+  );
+
   const setContext = useCallback((next: RoomContext | null) => {
     r.current.context = next;
     setContextState(next);
@@ -317,6 +345,11 @@ export function useConversationHost({ code, userLanguage, userName, initialConte
     ended,
     setContext,
     end,
+    contactRequest,
+    shareContact,
+    declineContact,
+    /** Close the request without saying anything. */
+    dismissContact: () => setContactRequest(null),
     /** The user's own turn. */
     claimMic: (active: boolean) => claimMic('USER', active),
     sendAudio: (audio: AudioInput) => runTurn('USER', { audio }),

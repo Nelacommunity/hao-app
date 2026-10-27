@@ -79,7 +79,7 @@ export function exclusionOf(story: FeedStory, profile: FeedProfile, history: Fee
 
 export function scoreStory(story: FeedStory, profile: FeedProfile, now: Date, seed: string) {
   let score = TYPE_WEIGHTS[story.type];
-  if (story.type === 'your_people_loved' && story.nationality && story.nationality === profile.nationality) score += NATIONALITY_BOOST;
+  if ((story.type === 'your_people_loved' || story.type === 'home_and_china') && story.nationality && story.nationality === profile.nationality) score += NATIONALITY_BOOST;
   if (story.city) score += CITY_BOOST;
   const ageDays = Math.max(0, (now.getTime() - new Date(story.created_at).getTime()) / DAY);
   score += FRESH_BOOST * Math.max(0, 1 - ageDays / FRESH_DAYS);

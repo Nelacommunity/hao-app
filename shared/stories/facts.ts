@@ -46,6 +46,9 @@ export type WikiFact = {
   image?: { url: string; credit: string };
 };
 
+/** Which story_topics categories each kind of nightly Wikipedia article is picked from. */
+export const ARTICLE_CATEGORIES = { culture: ['culture', 'festival'], painting: ['painting'], home: ['home'] } as const;
+
 /** A row of public.holidays. */
 export type HolidayFact = {
   id: string;
@@ -87,4 +90,14 @@ export type PlaceFact = {
 export type LovedFact = PlaceFact & { nationality: string; country: string; visitors: number; likes: number };
 
 /** A row of public.story_topics. */
-export type TopicRow = { id: string; category: string; label: string; enabled: boolean; wikipedia?: string | null };
+export type TopicRow = {
+  id: string;
+  category: string;
+  label: string;
+  enabled: boolean;
+  wikipedia?: string | null;
+  /** home topics: the country it links with China (ISO 3166-1 alpha-2). */
+  nationality?: string | null;
+  /** painting topics: the Wikimedia Commons file of the artwork (the article's lead image is often a photo). */
+  image_file?: string | null;
+};

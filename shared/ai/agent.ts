@@ -1,3 +1,5 @@
+// The agent logic every provider shares: prompts, knowledge, and clean-up of the model's JSON.
+// A provider only supplies a Transport (one model call returning the reply text) and text-to-speech.
 import {
   captionSchema,
   captionSystemPrompt,
@@ -48,7 +50,9 @@ import {
   ProviderError,
   type AgentProvider,
   type AgentTurn,
+  type AudioInput,
   type GuideTurn,
+  type LanguageTarget,
   type MemoryTurn,
   type NewMemory,
   type PlacesCategory,
@@ -63,22 +67,30 @@ import {
 } from './types';
 import { z } from 'zod';
 
-export type ThinkingLevel = 'minimal' | 'low' | 'medium' | 'high' | '';
+/** smart: agent turns, where reasoning matters. fast: speech-to-text, captions, short translations. room: live room turns. */
+export type Tier = 'smart' | 'fast' | 'room';
 
-export type GeminiConfig = {
-  apiKey: string;
-  /** Used for agent turns, where reasoning quality matters. */
-  model?: string;
-  thinkingLevel?: ThinkingLevel;
-  /** Used for speech-to-text, captions and short translations, where latency matters. */
-  fastModel?: string;
-  fastThinkingLevel?: ThinkingLevel;
-  /** Live room turns (listen + answer in one call), where every second counts. Defaults to `model`. */
-  roomModel?: string;
-  roomThinkingLevel?: ThinkingLevel;
-  /** Text-to-speech model and prebuilt voice. */
-  ttsModel?: string;
-  ttsVoice?: string;
+export type Part = { text: string } | { audio: AudioInput };
+
+export type TransportRequest = {
+  system: string;
+  parts: Part[];
+  schema: JsonSchema;
+  tier: Tier;
+  /** When given, the reply is streamed and this gets the text so far after every chunk. */
+  onText?: (soFar: string) => void;
+};
+
+/**
+ * One model call that returns the reply text (JSON for the schema). Throws ProviderError with the HTTP status
+ * when the request fails, and without a status when the reply is unusable (then the call is retried once).
+ */
+export type Transport = (request: TransportRequest) => Promise<string>;
+
+export type ProviderBackend = {
+  name: string;
+  call: Transport;
+  synthesize(input: { text: string; language: LanguageTarget }): Promise<AudioInput | null>;
 };
 
 // Room agent replies are validated strictly; anything else triggers one retry.
@@ -90,47 +102,29 @@ const roomAgentZod = z.object({
   agent_answered_itself: z.boolean().default(false),
   summary_update: z.object({ title: z.string(), items: z.array(z.string()), total: z.string().default('') }),
   memories: z.array(z.object({ kind: z.string(), text: z.string() })).default([]),
+  contact_request: z.enum(['none', 'phone', 'email']).catch('none'),
 });
 
 /** Models sometimes wrap JSON in ```json fences even in JSON mode. */
 const stripFences = (text: string) => text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
 
-/** Gemini TTS returns WAV; if raw 16-bit PCM comes back instead, add a WAV header so phones can play it. */
-function pcmToWav(base64: string, sampleRate = 24000) {
-  const pcm = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-  const header = new ArrayBuffer(44);
-  const v = new DataView(header);
-  const writeStr = (o: number, s: string) => [...s].forEach((ch, i) => v.setUint8(o + i, ch.charCodeAt(0)));
-  writeStr(0, 'RIFF');
-  v.setUint32(4, 36 + pcm.length, true);
-  writeStr(8, 'WAVE');
-  writeStr(12, 'fmt ');
-  v.setUint32(16, 16, true);
-  v.setUint16(20, 1, true);
-  v.setUint16(22, 1, true);
-  v.setUint32(24, sampleRate, true);
-  v.setUint32(28, sampleRate * 2, true);
-  v.setUint16(32, 2, true);
-  v.setUint16(34, 16, true);
-  writeStr(36, 'data');
-  v.setUint32(40, pcm.length, true);
-  const out = new Uint8Array(44 + pcm.length);
-  out.set(new Uint8Array(header), 0);
-  out.set(pcm, 44);
-  let binary = '';
-  for (let i = 0; i < out.length; i += 0x8000) binary += String.fromCharCode(...out.subarray(i, i + 0x8000));
-  return btoa(binary);
+/** HTTP statuses worth retrying: rate limited, or the model is briefly unavailable. */
+export const TRANSIENT = new Set([429, 500, 502, 503, 504]);
+
+/** Sends a request, retrying twice on rate limits and "model overloaded", which are usually gone a moment later. */
+export async function fetchWithRetry(label: string, send: () => Promise<Response>) {
+  let res = await send();
+  for (const wait of [700, 1500]) {
+    if (!TRANSIENT.has(res.status)) break;
+    console.warn(`[ai] ${label} returned ${res.status}; retrying in ${wait}ms`);
+    await new Promise((r) => setTimeout(r, wait));
+    res = await send();
+  }
+  return res;
 }
 
-type Tier = 'smart' | 'fast' | 'room';
-
-type GeminiResponse = { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] };
-
-const answerText = (data: GeminiResponse) =>
-  (data.candidates?.[0]?.content?.parts ?? []).map((p) => (p.thought ? '' : (p.text ?? ''))).join('');
-
-/** Collects a streamed reply, reporting the text so far after every chunk. */
-async function readStream(body: ReadableStream<Uint8Array>, onText: (soFar: string) => void) {
+/** Collects a server-sent-events reply, reporting the text so far after every chunk. */
+export async function readSse(body: ReadableStream<Uint8Array>, chunkText: (event: unknown) => string, onText: (soFar: string) => void) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -144,12 +138,12 @@ async function readStream(body: ReadableStream<Uint8Array>, onText: (soFar: stri
     for (const line of lines) {
       if (!line.startsWith('data:')) continue;
       try {
-        const chunk = answerText(JSON.parse(line.slice(5)) as GeminiResponse);
+        const chunk = chunkText(JSON.parse(line.slice(5)));
         if (!chunk) continue;
         text += chunk;
         onText(text);
       } catch {
-        // Ignore keep-alives and partial lines.
+        // Ignore keep-alives, [DONE] and partial lines.
       }
     }
   }
@@ -167,38 +161,17 @@ export function completedField(partialJson: string, field: string): string | nul
   }
 }
 
-type Part = { text: string } | { inlineData: { mimeType: string; data: string } };
-
-/** HTTP statuses worth retrying: rate limited, or the model is briefly unavailable. */
-const TRANSIENT = new Set([429, 500, 502, 503, 504]);
-
-// Gemini's responseSchema uses upper-case OpenAPI type names.
-function toGeminiSchema(schema: JsonSchema): object {
-  switch (schema.type) {
-    case 'string':
-      // Gemini rejects "" as an enum value, and dropping it would force a made-up answer where "" means
-      // "not said". Such fields go as plain strings; the prompt lists the values and callers validate them.
-      return schema.enum && !schema.enum.includes('') ? { type: 'STRING', enum: schema.enum } : { type: 'STRING' };
-    case 'boolean':
-      return { type: 'BOOLEAN' };
-    case 'integer':
-      return { type: 'INTEGER' };
-    case 'array':
-      return { type: 'ARRAY', items: toGeminiSchema(schema.items) };
-    case 'object':
-      return {
-        type: 'OBJECT',
-        properties: Object.fromEntries(Object.entries(schema.properties).map(([k, v]) => [k, toGeminiSchema(v)])),
-        required: schema.required,
-      };
-  }
-}
-
-// Browsers record iOS audio as audio/mp4; Gemini lists the same AAC container as audio/m4a.
-const normalizeMime = (mime: string) => {
+// Browsers record iOS audio as audio/mp4; Qwen knows the same AAC container as m4a.
+export const normalizeMime = (mime: string) => {
   const base = mime.split(';')[0].trim().toLowerCase();
   return base === 'audio/mp4' || base === 'audio/x-m4a' ? 'audio/m4a' : base;
 };
+
+export function bytesToBase64(bytes: Uint8Array) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
 
 // Model output is untrusted: keep only well-formed, short memories.
 const cleanMemories = (list: NewMemory[] | undefined, max = 3) =>
@@ -207,14 +180,9 @@ const cleanMemories = (list: NewMemory[] | undefined, max = 3) =>
     .slice(0, max)
     .map((m) => ({ kind: m.kind, text: m.text.trim().slice(0, 300) }));
 
-export function geminiProvider(config: GeminiConfig): AgentProvider {
-  const models: Record<Tier, { name: string; thinking: ThinkingLevel }> = {
-    smart: { name: config.model || 'gemini-3.8-flash', thinking: config.thinkingLevel ?? 'low' },
-    // Speech-to-text, captions and short translations: a light model is ~2× faster here with the same accuracy.
-    fast: { name: config.fastModel || 'gemini-3.5-flash-lite', thinking: config.fastThinkingLevel ?? 'minimal' },
-    room: { name: config.roomModel || config.model || 'gemini-3.8-flash', thinking: config.roomThinkingLevel ?? 'low' },
-  };
+const audioPart = (audio: AudioInput): Part => ({ audio });
 
+export function agentProvider(backend: ProviderBackend): AgentProvider {
   async function generateJson<T>(
     system: string,
     parts: Part[],
@@ -240,77 +208,21 @@ export function geminiProvider(config: GeminiConfig): AgentProvider {
     validate?: (raw: unknown) => T | null,
     onText?: (soFar: string) => void
   ): Promise<T> {
-    const target = models[tier];
-    const model = target.name;
-    const thinkingLevel = () => target.thinking;
-    const body = () =>
-      JSON.stringify({
-        systemInstruction: { parts: [{ text: system }] },
-        contents: [{ role: 'user', parts }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          responseSchema: toGeminiSchema(schema),
-          ...(thinkingLevel() ? { thinkingConfig: { thinkingLevel: thinkingLevel() } } : {}),
-        },
-      });
-
-    // With onText the reply is streamed (server-sent events) so callers can act on the first fields early.
-    const method = onText ? 'streamGenerateContent?alt=sse' : 'generateContent';
-    const once = () =>
-      fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:${method}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.apiKey },
-        body: body(),
-      });
-    // Rate limits and "model overloaded" are usually gone a moment later: retry twice before giving up.
-    const call = async () => {
-      let res = await once();
-      for (const wait of [700, 1500]) {
-        if (!TRANSIENT.has(res.status)) break;
-        console.warn(`[ai] ${model} returned ${res.status}; retrying in ${wait}ms`);
-        await new Promise((r) => setTimeout(r, wait));
-        res = await once();
-      }
-      return res;
-    };
-
-    let res = await call();
-    if (res.status === 400 && thinkingLevel()) {
-      const detail = await res.text();
-      // Older or newer models may not accept the thinking setting; retry once without it.
-      if (/thinking/i.test(detail)) {
-        // 'minimal' is only on some models: step up to 'low' (leaving it out would mean slower dynamic thinking).
-        const next = target.thinking === 'minimal' ? 'low' : '';
-        console.warn(`[ai] ${model} rejected thinkingLevel=${thinkingLevel()}; using ${next || 'the model default'}`);
-        target.thinking = next;
-        res = await call();
-      } else {
-        throw new ProviderError(`Gemini request failed (400): ${detail.slice(0, 300)}`, 400);
-      }
-    }
-    if (!res.ok) {
-      throw new ProviderError(`Gemini request failed (${res.status}): ${(await res.text()).slice(0, 300)}`, res.status);
-    }
-
-    const text = onText && res.body ? await readStream(res.body, onText) : answerText(await res.json());
+    const text = await backend.call({ system, parts, schema, tier, onText });
     let raw: unknown;
     try {
       raw = JSON.parse(stripFences(text));
     } catch {
-      throw new ProviderError('Gemini returned a response that is not valid JSON');
+      throw new ProviderError(`${backend.name} returned a response that is not valid JSON`);
     }
     if (!validate) return raw as T;
     const valid = validate(raw);
-    if (valid === null) throw new ProviderError('Gemini returned JSON that does not match the schema');
+    if (valid === null) throw new ProviderError(`${backend.name} returned JSON that does not match the schema`);
     return valid;
   }
 
-  const audioPart = (audio: { data: string; mimeType: string }): Part => ({
-    inlineData: { mimeType: normalizeMime(audio.mimeType), data: audio.data },
-  });
-
   return {
-    name: models.fast.name === models.smart.name ? `gemini:${models.smart.name}` : `gemini:${models.smart.name}+${models.fast.name}`,
+    name: backend.name,
 
     async soloTurn(input) {
       const who = input.speaker === 'local' ? 'LOCAL person' : 'TRAVELLER';
@@ -518,6 +430,7 @@ export function geminiProvider(config: GeminiConfig): AgentProvider {
                 }
               : null,
             memories: cleanMemories(d.memories as NewMemory[], 2),
+            contact_request: d.contact_request === 'none' ? null : d.contact_request,
           };
         },
         onSay &&
@@ -533,27 +446,7 @@ export function geminiProvider(config: GeminiConfig): AgentProvider {
       return turn;
     },
 
-    async synthesize({ text }) {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.ttsModel || 'gemini-3.8-flash-lite-tts'}:generateContent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.apiKey },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text }] }],
-          generationConfig: {
-            responseModalities: ['AUDIO'],
-            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: config.ttsVoice || 'Kore' } } },
-          },
-        }),
-      });
-      if (!res.ok) return null;
-      const data = (await res.json()) as { candidates?: { content?: { parts?: { inlineData?: { mimeType: string; data: string } }[] } }[] };
-      const audio = data.candidates?.[0]?.content?.parts?.find((p) => p.inlineData)?.inlineData;
-      if (!audio?.data) return null;
-      const mime = audio.mimeType.toLowerCase();
-      if (mime.startsWith('audio/wav') || mime.startsWith('audio/x-wav')) return { data: audio.data, mimeType: 'audio/wav' };
-      const rate = Number(/rate=(\d+)/.exec(mime)?.[1] ?? 24000);
-      return { data: pcmToWav(audio.data, rate), mimeType: 'audio/wav' };
-    },
+    synthesize: (input) => backend.synthesize(input),
 
     async translate({ text, target }) {
       const raw = await generateJson<{ translation: string; detected_language: string }>(

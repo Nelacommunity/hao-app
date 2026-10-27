@@ -34,7 +34,7 @@ import { chatTitle, loadChat, newChatId, openChat, useChatAutosave, type ChatSum
 import { EMPTY_GUIDE, legacyGuideState, type GuideState } from '@/lib/guide';
 import { tx, useT } from '@/lib/i18n';
 
-// Formats Gemini accepts directly: WAV on iOS, raw AAC on Android, WebM in the browser.
+// Formats the AI accepts directly: WAV on iOS, raw AAC on Android, WebM in the browser.
 const RECORDING_OPTIONS: RecordingOptions = {
   extension: '.m4a',
   sampleRate: 16000,

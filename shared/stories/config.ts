@@ -22,8 +22,11 @@ export const TYPE_WEIGHTS: Record<StoryType, number> = {
   etiquette_tip: 0.9,
   season_tip: 0.8,
   learn_how: 1.0,
+  did_you_know: 1.1,
+  painting: 1.0,
+  home_and_china: 1.0,
 };
-/** Added to your_people_loved stories for the user's own nationality. */
+/** Added to your_people_loved and home_and_china stories for the user's own nationality. */
 export const NATIONALITY_BOOST = 1.5;
 /** Added to stories written for the user's city rather than for everyone. */
 export const CITY_BOOST = 0.3;
@@ -48,6 +51,9 @@ export const VALID_DAYS: Record<StoryType, number> = {
   coming_up: 1,
   season_tip: 1,
   learn_how: 14,
+  did_you_know: 14,
+  painting: 21,
+  home_and_china: 21,
 };
 /** Stories generated per city and language each night, by type. */
 export const STORIES_PER_RUN: Record<StoryType, number> = {
@@ -60,9 +66,17 @@ export const STORIES_PER_RUN: Record<StoryType, number> = {
   coming_up: 1,
   season_tip: 1,
   learn_how: 1,
+  did_you_know: 2,
+  painting: 1,
+  // One per nationality with users in Hao (see HOME_NATIONALITIES_PER_RUN), at most this many a night.
+  home_and_china: 4,
 };
-/** Wikipedia articles fetched per city each night (for culture_moment stories). */
+/** Wikipedia articles fetched per city each night (for culture_moment and did_you_know stories). */
 export const WIKIPEDIA_PER_RUN = 3;
+/** Painting articles fetched per city each night. */
+export const PAINTINGS_PER_RUN = 1;
+/** Nationalities (most users first) that get a "your country and China" article each night. */
+export const HOME_NATIONALITIES_PER_RUN = 6;
 /** coming_up looks this many days ahead for holidays. */
 export const COMING_UP_DAYS = 21;
 /** Fewest people in a nationality group before their stats can be used (same as places, MIN_GROUP_SIZE). */

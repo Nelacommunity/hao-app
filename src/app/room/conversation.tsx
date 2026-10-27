@@ -9,6 +9,7 @@ import {
   ScrollView,
   type ScrollViewInstance,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -16,6 +17,7 @@ import {
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import type { ContactKind } from '@shared/ai/types';
 import type { ConvCaption, RoomAlert } from '@shared/rooms/protocol';
 
 import { HaoMark, Thinking } from '@/components/chat-ui';
@@ -51,7 +53,7 @@ export default function ConversationRoom() {
   // The QR page created the room and opened this screen when the local person joined.
   const [room] = useState(() => getHostedRoom('conversation'));
   const [initialContext] = useState(getRoomContext);
-  const { refreshProfile, profile, session } = useAuth();
+  const { refreshProfile, profile, session, updateProfile } = useAuth();
   const myName = profile?.display_name || session?.user.email?.split('@')[0] || '';
   const host = useConversationHost({
     code: room?.roomId ?? null,
@@ -59,7 +61,7 @@ export default function ConversationRoom() {
     userName: myName,
     initialContext,
   });
-  const { captions, whispers, alerts, summary, context, phase, localConnected, localName, connected, notice, ended } = host;
+  const { captions, whispers, alerts, summary, context, phase, localConnected, localName, connected, notice, ended, contactRequest } = host;
   const [dismissedAlert, setDismissedAlert] = useState(0);
   const [showQr, setShowQr] = useState(false);
   // After ending: keep it (summarised into Hao DNA) or delete it.
@@ -98,6 +100,15 @@ export default function ConversationRoom() {
     host.sendText(text);
   };
 
+  // Someone asked for the user's phone or email. Only what the user approves here is ever shared.
+  const savedContact = contactRequest?.kind === 'phone' ? profile?.contact_phone : profile?.contact_email || session?.user.email;
+  const shareContact = (kind: ContactKind, value: string, remember: boolean) => {
+    if (remember) updateProfile(kind === 'phone' ? { contact_phone: value } : { contact_email: value }).catch(() => {});
+    host.shareContact(kind, value, kind === 'phone' ? t('Here’s my phone number: {value}', { value }) : t('Here’s my email: {value}', { value }));
+  };
+  const declineContact = (kind: ContactKind) =>
+    host.declineContact(kind === 'phone' ? t('Sorry, I’d rather not share my phone number.') : t('Sorry, I’d rather not share my email.'));
+
   const leave = () => {
     forgetHostedRoom('conversation');
     setRoomContext(null);
@@ -119,7 +130,7 @@ export default function ConversationRoom() {
     setSaving(true);
     setSaveError(null);
     try {
-      await roomApi.save({ captions, summary, context, language: { code: language.code, name: language.name }, names: { user: myName, local: localName } });
+      await roomApi.save({ captions: captions.filter((c) => !c.contact), summary, context, language: { code: language.code, name: language.name }, names: { user: myName, local: localName } });
       refreshProfile().catch(() => {});
       leave();
     } catch (e) {
@@ -223,6 +234,18 @@ export default function ConversationRoom() {
         </ScrollView>
 
         <View style={styles.dock}>
+          {contactRequest && !ended ? (
+            <ContactRequestCard
+              key={contactRequest.id}
+              kind={contactRequest.kind}
+              saved={savedContact ?? ''}
+              asker={localName}
+              ready={myTurn && !vad.recording}
+              onShare={(value, remember) => shareContact(contactRequest.kind, value, remember)}
+              onDecline={() => declineContact(contactRequest.kind)}
+              onDismiss={host.dismissContact}
+            />
+          ) : null}
           {notice ? (
             <View style={styles.notice}>
               <Ionicons name="alert-circle-outline" size={16} color={Colors.redText} />
@@ -347,6 +370,16 @@ function FeedRow({ item, localName }: { item: FeedItem; localName: string | null
       </View>
     );
   }
+  if (item.contact) {
+    return (
+      <View style={styles.sharedContact}>
+        <Ionicons name={item.contact.kind === 'phone' ? 'call-outline' : 'mail-outline'} size={16} color={Chat.soft} />
+        <Text style={styles.sharedContactText} numberOfLines={1}>
+          {localName ? t('Shared with {name}: {value}', { name: localName, value: item.contact.value }) : t('Shared with them: {value}', { value: item.contact.value })}
+        </Text>
+      </View>
+    );
+  }
   const toLocal = item.to === 'LOCAL';
   return (
     <View style={styles.message}>
@@ -370,6 +403,72 @@ function FeedRow({ item, localName }: { item: FeedItem; localName: string | null
         </Text>
       )}
     </View>
+  );
+}
+
+const PHONE = /^\+?[\d\s()-]{5,24}$/;
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** "They're asking for your phone number": share what's saved (or type it in), or say no. */
+function ContactRequestCard({ kind, saved, asker, ready, onShare, onDecline, onDismiss }: {
+  kind: ContactKind;
+  saved: string;
+  asker: string | null;
+  ready: boolean;
+  onShare: (value: string, remember: boolean) => void;
+  onDecline: () => void;
+  onDismiss: () => void;
+}) {
+  const t = useT();
+  const [value, setValue] = useState(saved);
+  const [remember, setRemember] = useState(true);
+  const phone = kind === 'phone';
+  const clean = value.trim();
+  const valid = phone ? PHONE.test(clean) : EMAIL.test(clean);
+  const title = phone
+    ? asker ? t('{name} is asking for your phone number', { name: asker }) : t('They’re asking for your phone number')
+    : asker ? t('{name} is asking for your email', { name: asker }) : t('They’re asking for your email');
+
+  return (
+    <Animated.View entering={FadeInUp} style={styles.contactCard}>
+      <View style={styles.contactHead}>
+        <Ionicons name={phone ? 'call-outline' : 'mail-outline'} size={18} color={Chat.text} />
+        <Text style={styles.contactTitle}>{title}</Text>
+        <Pressable onPress={onDismiss} hitSlop={8} accessibilityLabel={t('Close')}>
+          <Ionicons name="close" size={18} color={Chat.soft} />
+        </Pressable>
+      </View>
+      <Text style={styles.contactBody}>{t('Only shared if you tap Share. Hao says it to them and shows it on their screen.')}</Text>
+      <TextInput
+        value={value}
+        onChangeText={setValue}
+        placeholder={phone ? t('Your phone number') : t('Your email')}
+        placeholderTextColor={Chat.faint}
+        keyboardType={phone ? 'phone-pad' : 'email-address'}
+        autoComplete={phone ? 'tel' : 'email'}
+        autoCapitalize="none"
+        autoCorrect={false}
+        style={styles.contactInput}
+      />
+      {clean !== saved ? (
+        <View style={styles.contactRemember}>
+          <Text style={styles.contactRememberText}>{t('Remember it for next time')}</Text>
+          <Switch value={remember} onValueChange={setRemember} accessibilityLabel={t('Remember it for next time')} />
+        </View>
+      ) : null}
+      <View style={styles.contactActions}>
+        <Pressable onPress={onDecline} disabled={!ready} style={[styles.contactNo, !ready && styles.disabled]} accessibilityRole="button">
+          <Text style={styles.contactNoText}>{t('Don’t share')}</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => onShare(clean, remember && clean !== saved)}
+          disabled={!ready || !valid}
+          style={[styles.contactYes, (!ready || !valid) && styles.disabled]}
+          accessibilityRole="button">
+          <Text style={styles.contactYesText}>{t('Share')}</Text>
+        </Pressable>
+      </View>
+    </Animated.View>
   );
 }
 
@@ -429,6 +528,20 @@ const styles = themed(() => StyleSheet.create({
   send: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.red, alignItems: 'center', justifyContent: 'center' },
   disabled: { opacity: 0.35 },
   hint: { fontSize: 13, color: Chat.soft, textAlign: 'center' },
+  contactCard: { backgroundColor: Chat.surface, borderRadius: 18, borderWidth: 1, borderColor: Chat.border, padding: Spacing.md, gap: 10, ...Shadow, shadowOpacity: 0.06 },
+  contactHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  contactTitle: { flex: 1, fontSize: 15, fontWeight: '600', color: Chat.text },
+  contactBody: { fontSize: 13, lineHeight: 18, color: Chat.soft },
+  contactInput: { fontSize: 17, color: Chat.text, borderWidth: 1, borderColor: Chat.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: Chat.page },
+  contactRemember: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  contactRememberText: { fontSize: 14, color: Chat.text },
+  contactActions: { flexDirection: 'row', gap: Spacing.sm },
+  contactNo: { flex: 1, minHeight: 46, borderRadius: 12, borderWidth: 1, borderColor: Chat.border, alignItems: 'center', justifyContent: 'center' },
+  contactNoText: { fontSize: 15, fontWeight: '600', color: Chat.text },
+  contactYes: { flex: 1, minHeight: 46, borderRadius: 12, backgroundColor: Chat.text, alignItems: 'center', justifyContent: 'center' },
+  contactYesText: { fontSize: 15, fontWeight: '600', color: Chat.page },
+  sharedContact: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radius.pill, backgroundColor: Chat.bubble },
+  sharedContactText: { fontSize: 13, color: Chat.soft, flexShrink: 1 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', padding: Spacing.md },
   qrSheet: { borderRadius: 32, padding: Spacing.md, backgroundColor: Colors.paper },
   saveBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },

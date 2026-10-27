@@ -23,6 +23,8 @@ export type Database = {
           wants: string[];
           experiences: string[];
           twin_completed_at: string | null;
+          contact_phone: string | null;
+          contact_email: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -44,6 +46,8 @@ export type Database = {
           wants?: string[];
           experiences?: string[];
           twin_completed_at?: string | null;
+          contact_phone?: string | null;
+          contact_email?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -65,6 +69,8 @@ export type Database = {
           wants?: string[];
           experiences?: string[];
           twin_completed_at?: string | null;
+          contact_phone?: string | null;
+          contact_email?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -444,6 +450,7 @@ export type Database = {
           valid_until: string | null;
           generated_by_model: string;
           attribution: string | null;
+          interaction: Json | null;
           reviewed_by: string | null;
           reviewed_at: string | null;
           created_at: string;
@@ -466,6 +473,7 @@ export type Database = {
           valid_until?: string | null;
           generated_by_model?: string;
           attribution?: string | null;
+          interaction?: Json | null;
           reviewed_by?: string | null;
           reviewed_at?: string | null;
           created_at?: string;
@@ -488,6 +496,7 @@ export type Database = {
           valid_until?: string | null;
           generated_by_model?: string;
           attribution?: string | null;
+          interaction?: Json | null;
           reviewed_by?: string | null;
           reviewed_at?: string | null;
           created_at?: string;
@@ -499,7 +508,7 @@ export type Database = {
           id: number;
           user_id: string;
           story_id: string;
-          event: 'view' | 'complete' | 'skip' | 'save' | 'action_tap' | 'ask_more' | 'hide';
+          event: 'view' | 'complete' | 'skip' | 'save' | 'action_tap' | 'ask_more' | 'hide' | 'quiz_right' | 'quiz_wrong' | 'tried' | 'want_to_try';
           slide_index: number | null;
           dwell_ms: number | null;
           created_at: string;
@@ -508,7 +517,7 @@ export type Database = {
           id?: number;
           user_id?: string;
           story_id: string;
-          event: 'view' | 'complete' | 'skip' | 'save' | 'action_tap' | 'ask_more' | 'hide';
+          event: 'view' | 'complete' | 'skip' | 'save' | 'action_tap' | 'ask_more' | 'hide' | 'quiz_right' | 'quiz_wrong' | 'tried' | 'want_to_try';
           slide_index?: number | null;
           dwell_ms?: number | null;
           created_at?: string;
@@ -517,7 +526,7 @@ export type Database = {
           id?: number;
           user_id?: string;
           story_id?: string;
-          event?: 'view' | 'complete' | 'skip' | 'save' | 'action_tap' | 'ask_more' | 'hide';
+          event?: 'view' | 'complete' | 'skip' | 'save' | 'action_tap' | 'ask_more' | 'hide' | 'quiz_right' | 'quiz_wrong' | 'tried' | 'want_to_try';
           slide_index?: number | null;
           dwell_ms?: number | null;
           created_at?: string;
@@ -585,6 +594,8 @@ export type Database = {
           label: string;
           enabled: boolean;
           wikipedia: string | null;
+          nationality: string | null;
+          image_file: string | null;
           created_at: string;
         };
         Insert: {
@@ -593,6 +604,8 @@ export type Database = {
           label: string;
           enabled?: boolean;
           wikipedia?: string | null;
+          nationality?: string | null;
+          image_file?: string | null;
           created_at?: string;
         };
         Update: {
@@ -601,6 +614,8 @@ export type Database = {
           label?: string;
           enabled?: boolean;
           wikipedia?: string | null;
+          nationality?: string | null;
+          image_file?: string | null;
           created_at?: string;
         };
         Relationships: [];
