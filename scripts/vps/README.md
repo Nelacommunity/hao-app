@@ -67,6 +67,7 @@ values):
 | `SMTP_SENDER_NAME` | `GOTRUE_SMTP_SENDER_NAME` | `Hao` |
 | `ENABLE_EMAIL_AUTOCONFIRM` | `GOTRUE_MAILER_AUTOCONFIRM` | `false` (otherwise no code is sent) |
 | — | `GOTRUE_RATE_LIMIT_EMAIL_SENT` | `60` (emails per hour; the default is very low) |
+| — | `GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION` | `true` (a stolen access token alone can't change the password) |
 
 The emails must use Hao's templates (a 6-digit code); Auth's built-in ones send a link the app can't open.
 Self-hosted Auth downloads templates from a URL, so `node --env-file=.vps.env.local scripts/vps/upload-email-templates.mjs`
