@@ -47,11 +47,6 @@ function rememberOpen<T>(mode: ChatMode, chat: OpenChat<T>) {
   }
 }
 
-/** Makes `chat` the open chat in `mode` (after "New chat" or opening one from the history). */
-export function setOpenChat<T>(mode: ChatMode, chat: OpenChat<T>) {
-  rememberOpen(mode, chat);
-}
-
 async function saveRemote(mode: ChatMode, chat: OpenChat<unknown>) {
   if (deleted.has(chat.id)) return;
   const { data: session } = await supabase.auth.getSession();

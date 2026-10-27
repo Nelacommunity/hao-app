@@ -1,6 +1,6 @@
 // Rooms run over Supabase Realtime. The host app is the room's "server": it keeps the state, calls the AI
 // through the app's API routes, and broadcasts the same ServerMessage shapes the guest page understands.
-// Guests (web page, no account) send ClientMessages. Keep server/public-style guest code in sync:
+// Guests (web page, no account) send ClientMessages. Keep the guest page in sync:
 // public/join/join.js.
 import type { LanguageTarget } from '../ai/types';
 import type { ClientMessage, Role, RoomType, ServerMessage } from './protocol';

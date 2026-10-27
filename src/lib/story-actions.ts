@@ -36,8 +36,6 @@ export function placeOf(action: StoryAction): Place | null {
   };
 }
 
-export const isPlaceAction = (action: StoryAction) => ['navigate', 'save_place', 'talk_to_staff'].includes(action.kind);
-
 /** Opens the Hao chat in a mode with a message ready to send (and the story as context). */
 export function openChatWith(o: { mode: 'places' | 'guide'; ask: string; storyId?: string }) {
   router.navigate({ pathname: '/translate', params: { mode: o.mode, ask: o.ask, story: o.storyId ?? '', at: String(Date.now()) } });

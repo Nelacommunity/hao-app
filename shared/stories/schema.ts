@@ -25,7 +25,6 @@ export const IMAGE_KINDS = ['real_photo', 'ai_illustration', 'none'] as const;
 export type ImageKind = (typeof IMAGE_KINDS)[number];
 
 export const ACTION_KINDS = ['navigate', 'save_place', 'talk_to_staff', 'find_food', 'practice_phrase', 'ask_more', 'learn_with_hao'] as const;
-export type ActionKind = (typeof ACTION_KINDS)[number];
 
 /** Types that go live without review; the rest start as drafts (unless STORIES_AUTO_APPROVE_ALL is on). */
 export const AUTO_APPROVED_TYPES: readonly StoryType[] = ['phrase_of_the_day', 'etiquette_tip', 'season_tip', 'coming_up'];

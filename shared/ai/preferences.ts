@@ -33,8 +33,6 @@ export const BudgetLabels: Record<Budget, { en: string; range: string }> = {
   high: { en: tx('Splurge'), range: tx('over ¥120 per person is fine') },
 };
 
-export const CommonAllergies = ['peanuts', 'tree nuts', 'shellfish', 'fish', 'eggs', 'dairy', 'gluten', 'soy', 'sesame'];
-
 /** Plain-text summary injected into prompts. */
 export function describePreferences(prefs: Preferences | null): string {
   if (!prefs) return 'No stored preferences.';

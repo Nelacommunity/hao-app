@@ -142,7 +142,6 @@ export function PlaceCard({ data, variant, index = 0 }: { data: PlaceCardData; v
   );
 }
 
-export const FoodCard = (props: { data: PlaceCardData; index?: number }) => <PlaceCard {...props} variant="food" />;
 
 /** A place the user has been, from "where have I been?" in chat. */
 export function VisitedCard({ data, index = 0 }: { data: VisitCardData; index?: number }) {

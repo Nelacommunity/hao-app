@@ -66,4 +66,3 @@ export const PhraseGroups: PhraseGroup[] = [
   },
 ];
 
-export const AllPhrases: Phrase[] = PhraseGroups.flatMap((g) => g.phrases);
