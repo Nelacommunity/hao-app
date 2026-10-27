@@ -66,6 +66,7 @@ values):
 | `SMTP_ADMIN_EMAIL` | `GOTRUE_SMTP_ADMIN_EMAIL` | the sender, on the verified domain (e.g. `login@acyrx.com`) |
 | `SMTP_SENDER_NAME` | `GOTRUE_SMTP_SENDER_NAME` | `Hao` |
 | `ENABLE_EMAIL_AUTOCONFIRM` | `GOTRUE_MAILER_AUTOCONFIRM` | `false` (otherwise no code is sent) |
+| `ADDITIONAL_REDIRECT_URLS` | `GOTRUE_URI_ALLOW_LIST` | `hao://**,https://hao-app.expo.app/**` (no `exp://` or `localhost` in production) |
 | — | `GOTRUE_RATE_LIMIT_EMAIL_SENT` | `60` (emails per hour; the default is very low) |
 | — | `GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION` | `true` (a stolen access token alone can't change the password) |
 

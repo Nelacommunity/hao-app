@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import { useMemo, useState } from 'react';
 
 import { amapMapHtml } from '@/components/map/amap-html';
@@ -8,6 +9,7 @@ import { CategoryMeta, type Place } from '@/data/places';
 import { useTravellerLanguage } from '@/lib/language-store';
 import { gcj02ToWgs84 } from '@/lib/china-coords';
 import type { Coords } from '@/lib/location';
+import { webBaseUrl } from '@/lib/rooms/session';
 
 export type PlaceMapProps = {
   places: Place[];
@@ -40,10 +42,16 @@ const pointOn = (engine: Engine, p: Coords) => {
 };
 const zoomFor = (delta: number) => Math.round(Math.log2(360 / delta) + 0.5);
 
-// AMap JS API key (Web端) and its security code. Without them the map falls back to AMap's raster
+// AMap JS API key (Web端). Its security code stays on the server: the map calls AMap through our proxy
+// (src/app/api/_AMapService). Without the key, or a server to reach, the map falls back to AMap's raster
 // tiles drawn with Leaflet.
 const JS_KEY = process.env.EXPO_PUBLIC_AMAP_JS_KEY;
-const SECURITY_CODE = process.env.EXPO_PUBLIC_AMAP_SECURITY_CODE;
+
+/** Where the map page reaches the AMap proxy: the same server as the API routes. */
+function amapServiceHost() {
+  const origin = webBaseUrl() || (Constants.expoConfig?.extra?.router?.origin as string | undefined) || '';
+  return origin ? `${origin.replace(/\/+$/, '')}/api/_AMapService` : '';
+}
 // The vector map shows other languages only once AMap grants the key multilingual permission (工单).
 const MULTILINGUAL = process.env.EXPO_PUBLIC_AMAP_MULTILINGUAL === 'true';
 
@@ -80,10 +88,11 @@ function mapHtml(options: MapPageOptions, languageCode: string, engine: Engine) 
     return mapboxMapHtml({ ...options, token: MAPBOX_TOKEN, language: MAPBOX_LANGUAGES.includes(base) ? base : 'en' });
   }
   const vector = vectorLanguage(languageCode);
-  if (JS_KEY && SECURITY_CODE && (MULTILINGUAL || vector.startsWith('zh'))) {
+  const serviceHost = amapServiceHost();
+  if (JS_KEY && serviceHost && (MULTILINGUAL || vector.startsWith('zh'))) {
     // Without the permission, Traditional Chinese readers get the Simplified map.
     const labels = MULTILINGUAL ? vector : 'zh';
-    return amapMapHtml({ ...options, key: JS_KEY, securityCode: SECURITY_CODE, languageCode: labels });
+    return amapMapHtml({ ...options, key: JS_KEY, serviceHost, languageCode: labels });
   }
   return leafletMapHtml(options);
 }

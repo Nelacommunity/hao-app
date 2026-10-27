@@ -6,7 +6,7 @@ import type { MapPageOptions } from '@/components/map/leaflet-html';
  * events), so the native WebView and the web iframe drive either one.
  * Docs: https://lbs.amap.com/api/javascript-api-v2/summary
  */
-export function amapMapHtml(options: MapPageOptions & { key: string; securityCode: string; languageCode: string }) {
+export function amapMapHtml(options: MapPageOptions & { key: string; serviceHost: string; languageCode: string }) {
   return `<!doctype html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
@@ -24,7 +24,7 @@ html,body,#map{margin:0;height:100%;background:#F5F3EF;-webkit-tap-highlight-col
 ${options.dark ? 'html,body,#map{background:#1B1B1D}\n.lbl{background:#1E1E20;color:#E9E9EB}\n.err{color:#A3A3A8}\n' : ''}.err{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;
  font:14px -apple-system,Roboto,sans-serif;color:#6B6870}
 </style>
-<script>window._AMapSecurityConfig={securityJsCode:${JSON.stringify(options.securityCode)}};</script>
+<script>window._AMapSecurityConfig={serviceHost:${JSON.stringify(options.serviceHost)}};</script>
 </head><body><div id="map"></div>
 <script>
 (function(){
