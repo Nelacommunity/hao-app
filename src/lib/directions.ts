@@ -58,7 +58,7 @@ function estimate(from: Coords, to: Coords, mode: TravelMode): Route {
   return { mode, coords: [from, to], distanceM: km * 1000, durationS: (km / SPEED_KMH[mode]) * 3600, approximate: true, steps };
 }
 
-/** Street route (GCJ-02, like the places) from AMap or Mapbox, or a straight-line estimate when neither is reachable. */
+/** Street route (GCJ-02, like the places) from Mapbox, or a straight-line estimate when it isn't reachable. */
 export async function getRoute(from: Coords, to: Coords, mode: TravelMode): Promise<Route> {
   if (distanceKm(from, to) > MAX_ROUTED_KM[mode]) return estimate(from, to, mode);
   const point = (c: Coords) => `${c.latitude.toFixed(6)},${c.longitude.toFixed(6)}`;

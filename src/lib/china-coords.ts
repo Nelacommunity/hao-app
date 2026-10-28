@@ -1,4 +1,4 @@
-// Mainland China map tiles (Apple Maps/AutoNavi, Google Maps China) use GCJ-02, which is offset
+// Mainland China map data (AMap's places, Apple Maps/AutoNavi, Google Maps China) uses GCJ-02, which is offset
 // 300–500 m from GPS (WGS-84). Pins and route lines from GPS data must be shifted before drawing.
 // Standard public conversion; outside China it returns the input unchanged.
 import type { Coords } from '@/lib/location';

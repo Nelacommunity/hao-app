@@ -59,9 +59,8 @@ Hao 好 许可协议（团队授权、非商业）
 Third-party components / 第三方组件
 
 The Work uses open-source software under its own licences, which this licence does not change. These include
-Expo and React Native (MIT), Supabase (MIT / Apache-2.0), Leaflet (BSD-2-Clause, bundled in
-src/components/map/leaflet-assets.generated.ts) and Zod (MIT); see package.json and node_modules for the full
-list. The project was started from Expo's template, whose remaining parts are under this licence:
+Expo and React Native (MIT), Supabase (MIT / Apache-2.0) and Zod (MIT); see package.json and node_modules for
+the full list. The map is Mapbox GL JS, loaded from Mapbox under the Mapbox Terms of Service. The project was started from Expo's template, whose remaining parts are under this licence:
 
   The MIT License (MIT)
   Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)

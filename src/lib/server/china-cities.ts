@@ -1,5 +1,5 @@
-// English names for Chinese cities, for the city Hao detects from GPS (AMap reverse geocoding is
-// Chinese only). Cities not listed keep their Chinese name.
+// English names for Chinese cities, for the city Hao detects from GPS (asked for in Chinese, so
+// it matches the names here). Cities not listed keep their Chinese name.
 const NAMES: Record<string, string> = {
   北京: 'Beijing', 上海: 'Shanghai', 天津: 'Tianjin', 重庆: 'Chongqing', 广州: 'Guangzhou', 深圳: 'Shenzhen', 成都: 'Chengdu',
   西安: "Xi'an", 杭州: 'Hangzhou', 南京: 'Nanjing', 武汉: 'Wuhan', 苏州: 'Suzhou', 长沙: 'Changsha', 郑州: 'Zhengzhou',

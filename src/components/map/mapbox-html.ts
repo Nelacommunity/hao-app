@@ -1,11 +1,25 @@
-import type { MapPageOptions } from '@/components/map/leaflet-html';
+/** What the app sends into the map page (coordinates already in the map's WGS-84 system). */
+export type MapState = {
+  places: { id: string; lat: number; lng: number; color: string; emoji: string; name: string; selected: boolean }[];
+  user: { lat: number; lng: number } | null;
+  route: { coords: [number, number][]; approximate: boolean } | null;
+};
+export type MapView =
+  | { kind: 'center'; lat: number; lng: number; zoom: number }
+  | { kind: 'fit'; coords: [number, number][]; bottom: number }
+  /** Navigation: keep the user in view, heading up. */
+  | { kind: 'follow'; lat: number; lng: number; zoom: number; bearing: number | null };
+export type MapEvent = { type: 'ready' } | { type: 'select'; id: string };
+/** dark: the app's dark theme, so the map matches it. */
+export type MapPageOptions = { lat: number; lng: number; zoom: number; accent: string; dark: boolean };
 
 const MAPBOX_GL = 'https://api.mapbox.com/mapbox-gl-js/v3.9.0';
 
 /**
- * Mapbox GL JS with the Standard style, labelled in the traveller's language. Same contract as the
- * Leaflet and AMap pages (window.haoState / window.haoView, posted events). Mapbox tiles are WGS-84, so
- * the app converts its GCJ-02 points before sending them in.
+ * Mapbox GL JS with the Standard style, labelled in the traveller's language. The app drives it with
+ * window.haoState / window.haoView; events go to the React Native WebView, or to the parent window when
+ * the page runs in an iframe on web. Mapbox tiles are WGS-84, so the app converts its GCJ-02 points
+ * before sending them in.
  * Docs: https://docs.mapbox.com/mapbox-gl-js/api/
  */
 export function mapboxMapHtml(options: MapPageOptions & { token: string; language: string }) {
@@ -63,6 +77,7 @@ html,body,#map{margin:0;height:100%;background:${options.dark ? '#1B1B1D' : '#F2
   window.haoView=function(v){if(loaded)setView(v);else pending.view=v;};
 
   function fail(){document.body.innerHTML='<div class="err">The map could not load. Check your connection.</div>';}
+  if(!${JSON.stringify(options.token)}){fail();return;}
   var script=document.createElement('script');
   script.src='${MAPBOX_GL}/mapbox-gl.js';
   script.onerror=fail;

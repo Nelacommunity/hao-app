@@ -25,4 +25,4 @@ export type RouteStep = {
   start: number;
 };
 
-export type RouteResult = { coords: [number, number][]; distanceM: number; durationS: number; steps: RouteStep[]; source: 'amap' | 'mapbox' };
+export type RouteResult = { coords: [number, number][]; distanceM: number; durationS: number; steps: RouteStep[]; source: 'mapbox' };

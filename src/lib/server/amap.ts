@@ -1,7 +1,6 @@
-// AMap (高德) Web Service calls for API routes only. AMAP_KEY stays on the server.
+// AMap (高德) place search and details for API routes only. AMAP_KEY stays on the server. The map,
+// routes and city lookup are Mapbox (lib/server/mapbox).
 // Docs: https://lbs.amap.com/api/webservice/guide/api-advanced/newpoisearch
-import type { Maneuver, RouteResult, RouteStep } from '@shared/places/route';
-
 import { categoryOf, type Place } from '@/data/places';
 
 const BASE = 'https://restapi.amap.com';
@@ -127,73 +126,4 @@ export function searchCity(o: { city: string; types?: string; keywords?: string;
 /** Up to 10 places by AMap id. */
 export function placesById(ids: string[]) {
   return query('/v5/place/detail', { id: ids.slice(0, 10).join('|') });
-}
-
-// ─── Routes ──────────────────────────────────────────────────────────────────
-
-type AmapStep = { step_distance?: Text; polyline?: Text; road_name?: Text; cost?: { duration?: Text }; navi?: { action?: Text; assistant_action?: Text } };
-type AmapPath = { distance?: Text; cost?: { duration?: Text }; steps?: AmapStep[] };
-
-const ROUTE_PATH = { foot: 'walking', bike: 'bicycling', car: 'driving' } as const;
-export type RouteMode = keyof typeof ROUTE_PATH;
-export const isRouteMode = (v: string): v is RouteMode => v in ROUTE_PATH;
-
-// AMap's navi actions (Chinese) as language-neutral manoeuvres.
-const AMAP_ACTIONS: [RegExp, Maneuver][] = [
-  [/调头/, 'uturn'],
-  [/环岛/, 'roundabout'],
-  [/左后方|向左急转/, 'sharp-left'],
-  [/右后方|向右急转/, 'sharp-right'],
-  [/左前方/, 'slight-left'],
-  [/右前方/, 'slight-right'],
-  [/靠左/, 'keep-left'],
-  [/靠右/, 'keep-right'],
-  [/左转/, 'left'],
-  [/右转/, 'right'],
-  [/到达/, 'arrive'],
-];
-const maneuverOf = (action: string): Maneuver => AMAP_ACTIONS.find(([re]) => re.test(action))?.[1] ?? 'straight';
-
-/** Street route between two GCJ-02 points, as [lat, lng] pairs, with turn-by-turn steps. */
-export async function route(mode: RouteMode, from: { lat: number; lng: number }, to: { lat: number; lng: number }): Promise<RouteResult> {
-  const data = await amap<{ route?: { paths?: AmapPath[] } }>(`/v5/direction/${ROUTE_PATH[mode]}`, {
-    origin: lngLat(from.lat, from.lng),
-    destination: lngLat(to.lat, to.lng),
-    show_fields: 'cost,polyline,navi',
-  });
-  const path = data.route?.paths?.[0];
-  if (!path) throw new AmapError('AMap found no route');
-  const steps = path.steps ?? [];
-  // Polylines are "lng,lat;lng,lat"; read them as a flat list of numbers to be safe.
-  const coords: [number, number][] = [];
-  const out: RouteStep[] = [];
-  // AMap puts the manoeuvre at the END of a step ("walk 120 m, then turn left"): each step is shown as
-  // "follow this road", and its action becomes the next step's manoeuvre.
-  let next: Maneuver = 'depart';
-  for (const step of steps) {
-    out.push({ maneuver: next, road: text(step.road_name), distanceM: Number(text(step.step_distance)) || 0, start: coords.length });
-    next = maneuverOf(text(step.navi?.action) || text(step.navi?.assistant_action));
-    const nums = text(step.polyline).split(/[;,]/).map(Number);
-    for (let i = 0; i + 1 < nums.length; i += 2) coords.push([nums[i + 1], nums[i]]);
-  }
-  if (coords.length) out.push({ maneuver: 'arrive', road: '', distanceM: 0, start: coords.length - 1 });
-  const stepSeconds = steps.reduce((sum, s) => sum + (Number(text(s.cost?.duration)) || 0), 0);
-  return {
-    coords,
-    distanceM: Number(text(path.distance)) || 0,
-    durationS: Number(text(path.cost?.duration)) || stepSeconds,
-    steps: out,
-    source: 'amap',
-  };
-}
-
-// ─── Where the user is ───────────────────────────────────────────────────────
-
-/** The city (in Chinese) at a GCJ-02 point; municipalities like 北京市 are their own city. Null outside China. */
-export async function cityAt(lat: number, lng: number): Promise<string | null> {
-  type Component = { province?: Text; city?: Text; country?: Text };
-  const data = await amap<{ regeocode?: { addressComponent?: Component } }>('/v3/geocode/regeo', { location: lngLat(lat, lng) });
-  const c = data.regeocode?.addressComponent;
-  // AMap sends an empty array for the city of a municipality, and nothing useful outside China.
-  return text(c?.city) || text(c?.province) || null;
 }

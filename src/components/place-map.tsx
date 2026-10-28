@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
-import type { MapEvent } from '@/components/map/leaflet-html';
+import type { MapEvent } from '@/components/map/mapbox-html';
 import { useMapPage, type PlaceMapProps } from '@/components/map/use-map-page';
 
 export type { PlaceMapProps };
 
-// AMap (高德) tiles drawn with Leaflet in a WebView on iOS and Android: one map that loads in mainland
-// China, needs no Google Play services or map SDK key, and runs in Expo Go.
+// Mapbox GL JS in a WebView on iOS and Android: needs no Google Play services or native map SDK, and
+// runs in Expo Go.
 export function PlaceMap(props: PlaceMapProps) {
   const { places, onSelect } = props;
   const { html, state, view } = useMapPage(props);

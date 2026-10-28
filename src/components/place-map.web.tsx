@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 
-import type { MapEvent, MapState, MapView } from '@/components/map/leaflet-html';
+import type { MapEvent, MapState, MapView } from '@/components/map/mapbox-html';
 import { useMapPage, type PlaceMapProps } from '@/components/map/use-map-page';
 
 export type { PlaceMapProps };
 
 type MapWindow = Window & { haoState?: (s: MapState) => void; haoView?: (v: MapView) => void };
 
-// The same AMap (高德) page as the phone apps, in an iframe. srcdoc keeps it same-origin, so the app
+// The same Mapbox page as the phone apps, in an iframe. srcdoc keeps it same-origin, so the app
 // calls its functions directly; it posts its events back to this window.
 export function PlaceMap(props: PlaceMapProps) {
   const { places, onSelect } = props;

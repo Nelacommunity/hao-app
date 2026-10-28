@@ -12,7 +12,7 @@ Built with Expo SDK 58 (iOS, Android and web), Expo Router API routes, Supabase 
 | **Discover** | A swipe-up feed of AI-written stories about your city (culture, places, food, festivals, paintings, "your country and China"), mixed with real nearby places and a phrase of the day. Quizzes, "Tried it / Want to try", read or listen mode, likes and sharing. |
 | **Ask Hao** | One chat with four modes. **Places**: "halal noodles near me" → real AMap results ranked for you and for people from your country, as cards with Navigate, Talk to staff and Save. **Guide**: step-by-step checklists for WeChat, Alipay, SIM cards, banks, trains, hotel registration and more. **Interpret**: Hao talks to a local in Mandarin for you. **Memory**: "what did the taxi driver say about the fare?" |
 | **QR rooms** | A local scans your QR code with WeChat or their camera, with no app or account. Live voice conversation, with Hao translating each turn aloud on the other person's phone, or a captioned tour broadcast to many listeners. |
-| **Explore** | Map with places around you (AMap, or Mapbox for travellers who don't read Chinese), routes, and hand-off to AMap / Apple Maps / DiDi. |
+| **Explore** | A Mapbox map in your language with places around you, turn-by-turn routes (Mapbox Directions), and hand-off to the AMap, Apple Maps or DiDi apps. |
 | **My Places** | Everywhere you've eaten, visited and stayed, with ratings and tags, and where you want to go next. |
 | **Me** | Your **Hao DNA**, built by chatting (nationality, diet, allergies, spice, budget, loves, wants), Hao's memory, contact details you can choose to share in a conversation, language, theme and account. |
 
@@ -22,9 +22,13 @@ The whole app is available in any language the user picks.
 
 ```
 app (Expo Router, iOS / Android / web)
+ ├─ Map: Mapbox GL JS (WebView / iframe) ── Mapbox tiles, labels in the traveller's language
  ├─ Supabase Auth + Postgres (RLS on every table) + Realtime (QR rooms) + Storage
- └─ Expo Router API routes (src/app/api, EAS Hosting) ── Qwen · AMap
-Supabase Edge Function generate-stories (nightly, pg_cron) ── Qwen · AMap · Wikipedia
+ └─ Expo Router API routes (src/app/api, EAS Hosting)
+     ├─ /api/route, /api/where ── Mapbox (Directions, Geocoding)
+     ├─ /api/places, /api/search-places ── AMap place search (data only, no AMap map)
+     └─ AI routes ── Qwen
+Supabase Edge Function generate-stories (nightly, pg_cron) ── Qwen · AMap places · Wikipedia
 ```
 
 - **AI** (`shared/ai`): every model call goes through one provider (`createProvider`). `agent.ts` holds the prompts
@@ -52,7 +56,7 @@ set `RESEND_API_KEY` and `AUTH_EMAIL_FROM` (see `.env.example`). Minimum passwor
 ```bash
 cp .env.example .env
 ```
-Required: `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_KEY`, `SUPABASE_SECRET_KEY`, `QWEN_API_KEY`, `AMAP_KEY`.
+Required: `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_KEY`, `SUPABASE_SECRET_KEY`, `QWEN_API_KEY`, `AMAP_KEY`, `EXPO_PUBLIC_MAPBOX_TOKEN`.
 Everything else is optional and explained in `.env.example`.
 
 ### 3. Run
@@ -79,7 +83,7 @@ Set the server variables (`QWEN_API_KEY`, `SUPABASE_SECRET_KEY`, `AMAP_KEY`) in 
 | `supabase/` | Migrations, Edge Function, auth email templates, local config |
 | `public/join` | The QR guest page (plain JS, no app needed) |
 | `knowledge/` | The knowledge base Hao answers from |
-| `scripts/` | Build steps (`kb:build`, `i18n:build`, `map:build`, `stories:facts`), seeding, and VPS tools |
+| `scripts/` | Build steps (`kb:build`, `i18n:build`, `stories:facts`), seeding, and VPS tools |
 
 ## How it works
 
@@ -107,9 +111,15 @@ picks a language, `/api/ui-strings` translates the catalog once and stores it in
 everyone. The server only translates its own catalog, never text from the request.
 
 ### Maps
-AMap (高德) tiles drawn with Leaflet in a WebView: loads in mainland China, needs no Google Play services. With
-`EXPO_PUBLIC_MAPBOX_TOKEN`, travellers who don't read Chinese get Mapbox with labels in their language.
-Coordinates are converted between GCJ-02 and WGS-84 so pins line up.
+Mapbox is the app's map system. The map is Mapbox GL JS with the Standard style in a WebView (an iframe on web),
+driven by `src/components/map/` and labelled in the traveller's language (Simplified or Traditional Chinese for
+Chinese readers). It needs no Google Play services or native map SDK and runs in Expo Go. Street routes with
+turn-by-turn steps (`/api/route`) and the city Hao detects from GPS (`/api/where`) come from Mapbox too.
+`EXPO_PUBLIC_MAPBOX_TOKEN` (a public `pk.…` token) is required, both in the app and on the server.
+
+AMap is used only as a place database (search and details, `src/lib/server/amap.ts`), because Mapbox has very
+little place data in mainland China. Its places are in GCJ-02, so `src/lib/china-coords.ts` converts them to
+WGS-84 before they go on the Mapbox map, and routes back again, so pins and route lines line up.
 
 ## Checks
 ```bash
