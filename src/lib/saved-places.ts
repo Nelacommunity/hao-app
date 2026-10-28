@@ -1,12 +1,15 @@
+import { withOfflineCopy } from '@/lib/offline';
 import { supabase } from '@/lib/supabase';
 
-export async function fetchSavedPlaceIds(): Promise<string[]> {
-  const { data, error } = await supabase
-    .from('saved_places')
-    .select('place_id')
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data.map((row) => row.place_id);
+export function fetchSavedPlaceIds(): Promise<string[]> {
+  return withOfflineCopy('saved', async () => {
+    const { data, error } = await supabase
+      .from('saved_places')
+      .select('place_id')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data.map((row) => row.place_id);
+  });
 }
 
 export async function isPlaceSaved(placeId: string): Promise<boolean> {

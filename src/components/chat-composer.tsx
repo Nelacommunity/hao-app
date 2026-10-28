@@ -27,6 +27,8 @@ type Props = {
   onOpenMenu: () => void;
   /** Shows a "Discover" chip that opens today's stories. */
   onOpenDiscover?: () => void;
+  /** Shows a camera button: photograph a menu or sign for Hao to read (Places). */
+  onScan?: () => void;
   busy: boolean;
   /** Voice input; omit to hide the mic (e.g. Guide mode). */
   voice?: {
@@ -41,7 +43,7 @@ type Props = {
   };
 };
 
-export function ChatComposer({ mode, value, onChangeText, onSend, onOpenMenu, onOpenDiscover, busy, voice }: Props) {
+export function ChatComposer({ mode, value, onChangeText, onSend, onOpenMenu, onOpenDiscover, onScan, busy, voice }: Props) {
   const t = useT();
   const hasText = value.trim().length > 0;
 
@@ -90,6 +92,16 @@ export function ChatComposer({ mode, value, onChangeText, onSend, onOpenMenu, on
             </Pressable>
           ) : null}
           <View style={{ flex: 1 }} />
+          {onScan && !hasText ? (
+            <Pressable
+              onPress={onScan}
+              disabled={busy}
+              style={({ pressed }) => [styles.plus, pressed && styles.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel={t('Scan a menu or sign')}>
+              <Ionicons name="camera-outline" size={22} color={ChatColors.text} />
+            </Pressable>
+          ) : null}
           {hasText || !voice ? (
             <Pressable
               onPress={onSend}

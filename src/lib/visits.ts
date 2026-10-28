@@ -12,6 +12,7 @@ import { placeFromRow, type Place } from '@/data/places';
 import { wgs84ToGcj02 } from '@/lib/china-coords';
 import { getTravellerLanguage } from '@/lib/language-store';
 import { distanceKm } from '@/lib/location';
+import { withOfflineCopy } from '@/lib/offline';
 import { supabase } from '@/lib/supabase';
 import '@/lib/supabase-storage';
 
@@ -54,15 +55,17 @@ const toCard = (v: VisitRow): VisitCardData => ({
 });
 
 /** Every confirmed visit, newest first (filter with inGroup). */
-export async function fetchVisits(): Promise<VisitCardData[]> {
-  const { data, error } = await supabase
-    .from('visits')
-    .select(VISIT_COLUMNS)
-    .eq('status', 'confirmed')
-    .order('visited_at', { ascending: false })
-    .limit(500);
-  if (error) throw error;
-  return (data as VisitRow[]).map(toCard);
+export function fetchVisits(): Promise<VisitCardData[]> {
+  return withOfflineCopy('visits', async () => {
+    const { data, error } = await supabase
+      .from('visits')
+      .select(VISIT_COLUMNS)
+      .eq('status', 'confirmed')
+      .order('visited_at', { ascending: false })
+      .limit(500);
+    if (error) throw error;
+    return (data as VisitRow[]).map(toCard);
+  });
 }
 
 /** Visits waiting for "Did you go?" (asked in chat or not), for the To review section. */

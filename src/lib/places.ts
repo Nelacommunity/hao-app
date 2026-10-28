@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { isPlaceId, type Place, type PlaceCategory } from '@/data/places';
 import { getTravellerLanguage, useTravellerLanguage } from '@/lib/language-store';
-import type { Coords } from '@/lib/location';
+import { distanceKm, type Coords } from '@/lib/location';
 import { supabase } from '@/lib/supabase';
 
 /** A place search: around a point (closest first) or in a city, optionally by category or keywords. */
@@ -170,15 +170,31 @@ export function getCachedPlace(id: string) {
   return byId.get(id);
 }
 
+/** The closest place already on the device to `near` (within `maxM`), e.g. for the SOS sheet. Works offline. */
+export function nearestCachedPlace(near: Coords, maxM = 1500): { place: Place; distanceM: number } | null {
+  load();
+  let best: { place: Place; distanceM: number } | null = null;
+  for (const place of byId.values()) {
+    const distanceM = distanceKm(near, place) * 1000;
+    if (distanceM <= maxM && (!best || distanceM < best.distanceM)) best = { place, distanceM };
+  }
+  return best;
+}
+
 /** Places by AMap id, in the order asked; unknown ids are skipped. */
 export async function fetchPlacesById(ids: string[]): Promise<Place[]> {
   load();
   const now = Date.now();
   const missing = ids.filter((id) => isPlaceId(id) && (!byId.has(id) || now - placeAt.get(id)! >= MAX_AGE_MS));
-  for (let i = 0; i < missing.length; i += 10) {
-    const params = new URLSearchParams({ ids: missing.slice(i, i + 10).join(',') });
-    setLanguage(params);
-    await get(params);
+  try {
+    for (let i = 0; i < missing.length; i += 10) {
+      const params = new URLSearchParams({ ids: missing.slice(i, i + 10).join(',') });
+      setLanguage(params);
+      await get(params);
+    }
+  } catch (e) {
+    // Offline (or the server is down): the copies on the device are still better than nothing.
+    if (!ids.some((id) => byId.has(id))) throw e;
   }
   return ids.map((id) => byId.get(id)).filter((p): p is Place => !!p);
 }

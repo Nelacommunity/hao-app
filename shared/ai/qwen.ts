@@ -1,5 +1,5 @@
 // Qwen transport for the shared agent (agent.ts), through Alibaba Model Studio's OpenAI-compatible API.
-// Text goes to a Qwen text model with a strict JSON schema. Audio goes to a Qwen omni model, which only has
+// Text goes to a Qwen text model with a strict JSON schema. Audio and photos go to a Qwen omni model, which only has
 // JSON mode, so the schema is spelled out in the prompt and agent.ts validates the reply.
 import { agentProvider, bytesToBase64, fetchWithRetry, normalizeMime, readSse, type Part, type Tier } from './agent';
 import type { JsonSchema } from './prompts';
@@ -58,7 +58,9 @@ const toContent = (part: Part) =>
         type: 'input_audio',
         input_audio: { data: `data:${normalizeMime(part.audio.mimeType)};base64,${part.audio.data}`, format: audioFormat(part.audio.mimeType) },
       }
-    : { type: 'text', text: part.text };
+    : 'image' in part
+      ? { type: 'image_url', image_url: { url: `data:${normalizeMime(part.image.mimeType)};base64,${part.image.data}` } }
+      : { type: 'text', text: part.text };
 
 type ChatResponse = { choices?: { message?: { content?: string | null } }[] };
 type ChatChunk = { choices?: { delta?: { content?: string | null } }[] };
@@ -77,7 +79,8 @@ export function qwenProvider(config: QwenConfig): AgentProvider {
     name: `qwen:${smart}+${audioModel}`,
 
     async call({ system, parts, schema, tier, onText }) {
-      const hasAudio = parts.some((p) => 'audio' in p);
+      // Audio and photos go to the omni model, which reads both (and only takes json_object output).
+      const hasAudio = parts.some((p) => 'audio' in p || 'image' in p);
       const model = hasAudio ? audioModel : models[tier];
       const thinking = !hasAudio && tier === 'smart' && !!config.thinking;
       // Thinking mode only streams; the reasoning arrives in reasoning_content and is skipped.

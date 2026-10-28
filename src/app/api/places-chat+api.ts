@@ -1,16 +1,21 @@
-// The Places chat: Hao picks one tool per message (search_places, community_picks, log_visit, get_my_places,
-// save_place), the server runs it, and Hao answers only from what the tool returned. Replies are { text, cards }.
+// The Places chat: Hao picks one tool per message (search_places, community_picks, plan_day, trip_journal,
+// log_visit, get_my_places, save_place), the server runs it, and Hao answers only from what the tool returned.
+// Replies are { text, cards }. A photo (menu or sign) skips the tools: Hao reads it and flags dishes that clash
+// with the traveller's diet.
 // Every turn also saves what the user said about themselves ("I love this", "I want to…") to their Hao DNA,
 // and the DNA steers vague searches ("somewhere I'd love", "food like home").
+import { describePreferences } from '@shared/ai/preferences';
 import { twinDna } from '@shared/ai/twin';
 import type { ShownPlace } from '@shared/ai/types';
 import { Countries } from '@shared/places/countries';
 import { HIGH_RATING } from '@shared/places/config';
+import { conflictOf } from '@shared/places/ranking';
 
-import type { ChatCard, PlaceCardData, PlacesChatResponse, VisitCardData } from '@/data/place-cards';
+import type { ChatCard, MapListData, MenuItem, PlaceCardData, PlacesChatResponse, VisitCardData } from '@/data/place-cards';
 import { isPlaceId, placeFromRow, type Place } from '@/data/places';
 import { authenticate, providerOrError } from '@/lib/server/api';
 import { AmapError } from '@/lib/server/amap';
+import { planDay } from '@/lib/server/day-plan';
 import { memoryContext, remember, toolUses, userClient } from '@/lib/server/memory';
 import { localizePlaces, placeLanguage } from '@/lib/server/place-i18n';
 import { loadPlaceProfile, upsertPlaces } from '@/lib/server/places-db';
@@ -27,7 +32,13 @@ type Body = {
   shown?: (ShownPlace & { id: string })[];
   location?: unknown;
   city?: string | null;
+  /** A photo of a menu or sign, base64 (menu and sign scanner). */
+  image?: { data?: unknown; mimeType?: unknown };
 };
+
+const MAX_IMAGE_BASE64 = 6 * 1024 * 1024;
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
+const DAY = 86_400_000;
 
 const km = (m?: number) => (m === undefined ? '' : m < 1000 ? `${m} m away` : `${(m / 1000).toFixed(1)} km away`);
 
@@ -48,7 +59,12 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
   const text = typeof body.text === 'string' ? body.text.trim().slice(0, 1000) : '';
-  if (!text) return Response.json({ error: 'Send a message' }, { status: 400 });
+  const image =
+    body.image && typeof body.image.data === 'string' && body.image.data.length <= MAX_IMAGE_BASE64 && IMAGE_TYPES.includes(String(body.image.mimeType))
+      ? { data: body.image.data, mimeType: String(body.image.mimeType) }
+      : null;
+  if (body.image && !image) return Response.json({ error: 'Send a JPEG or PNG photo under 4 MB.' }, { status: 400 });
+  if (!text && !image) return Response.json({ error: 'Send a message' }, { status: 400 });
 
   const language = { code: String(body.language?.code ?? 'en').slice(0, 32), name: String(body.language?.name ?? 'English').slice(0, 64) };
   const placeLang = placeLanguage(language.code, language.name);
@@ -70,6 +86,23 @@ export async function POST(request: Request) {
     .join('\n');
 
   try {
+    if (image) {
+      const prefs = profile.preferences;
+      const scan = await provider.readImage({ image, language, text, about: [about, describePreferences(prefs)].filter(Boolean).join('\n') });
+      // The model warns about clashes; the same diet and allergy check as place ranking catches what it misses.
+      const items = scan.items.map((item): MenuItem => {
+        const clash = prefs ? conflictOf({ id: item.zh, name: item.name, nameZh: item.zh, kind: 'food', typeZh: '', tags: item.contains }, prefs) : null;
+        return clash ? { ...item, clash } : item;
+      });
+      const flagged = items.filter((it) => it.warning || it.clash).length;
+      return Response.json({
+        text: scan.summary,
+        cards: [{ type: 'menu', data: { ...scan, items } }],
+        quick_replies: [],
+        tools: [{ tool: 'read_photo', kind: scan.kind, count: items.length, flagged }],
+      } satisfies PlacesChatResponse);
+    }
+
     const plan = await provider.placesPlan({
       language,
       preferences: profile.preferences,
@@ -166,6 +199,58 @@ export async function POST(request: Request) {
           `${plan.scope === 'anywhere' ? 'Across China, for a trip or holiday' : 'Near the traveller'}, places people from their country visited and liked:\n${listOf(picks.cards).join('\n')}`
         );
         response = { text: out.reply, cards: cardsOf(picks.cards), quick_replies: out.quick_replies.length ? out.quick_replies : plan.quick_replies, tools };
+        break;
+      }
+
+      case 'plan_day': {
+        const day = await planDay(db, user.id, {
+          query: plan.query,
+          location: plan.near ? null : location,
+          city: plan.near || (location ? null : city),
+          filters: plan.filters,
+          language: placeLang,
+          title: plan.near || city || '',
+        });
+        tools.push({ tool: 'plan_day', stops: day.plan?.stops.length ?? 0 });
+        if (day.needsLocation) {
+          response = { text: 'Share your location, or tell me the city, and I’ll plan your day.', cards: [], quick_replies: plan.quick_replies, tools, needs_location: true };
+          break;
+        }
+        if (!day.plan) {
+          response = { text: 'I couldn’t find enough places for a day plan there. Try another city or area?', cards: [], quick_replies: plan.quick_replies, tools };
+          break;
+        }
+        const lines = day.plan.stops.map((s, i) => `${i + 1}. ${s.label}: ${s.place.name}${s.place.nameZh !== s.place.name ? ` (${s.place.nameZh})` : ''}`);
+        const out = await reply(`A day plan, in order:\n${lines.join('\n')}\nTotal ${(day.plan.distanceM! / 1000).toFixed(1)} km between stops.`);
+        response = { text: out.reply, cards: [{ type: 'day_plan', data: day.plan }], quick_replies: out.quick_replies.length ? out.quick_replies : plan.quick_replies, tools };
+        break;
+      }
+
+      case 'trip_journal': {
+        const days = plan.days || 30;
+        const { data, error } = await db
+          .from('visits')
+          .select('rating, note, visited_at, places!inner(id, amap_poi_id, name, name_zh, category, lat, lng, address, tags, amap_rating)')
+          .eq('status', 'confirmed')
+          .gte('visited_at', new Date(Date.now() - days * DAY).toISOString())
+          .order('visited_at', { ascending: true })
+          .limit(40);
+        if (error) throw error;
+        const journal: MapListData = {
+          title: days === 7 ? 'This week' : `Last ${days} days`,
+          stops: (data ?? []).map((v) => ({ place: placeFromRow(v.places), label: v.visited_at.slice(0, 10), rating: v.rating, note: v.note })),
+          route: null,
+        };
+        tools.push({ tool: 'trip_journal', count: journal.stops.length });
+        if (!journal.stops.length) {
+          response = { text: 'There’s nothing in your trip yet. Tell me where you go (“I had lunch at…”) and I’ll keep your journal.', cards: [], quick_replies: plan.quick_replies, tools };
+          break;
+        }
+        const lines = journal.stops.map(
+          (s) => `${s.label}: ${s.place.name}${s.rating === 1 ? ' (loved it)' : s.rating === -1 ? ' (did not like it)' : ''}${s.note ? ` — note: ${s.note}` : ''}`
+        );
+        const out = await reply(`The traveller's trip over the last ${days} days, in order:\n${lines.join('\n')}`);
+        response = { text: out.reply, cards: [{ type: 'journal', data: journal }], quick_replies: out.quick_replies, tools };
         break;
       }
 

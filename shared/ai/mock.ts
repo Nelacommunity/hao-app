@@ -88,7 +88,7 @@ export function mockProvider(): AgentProvider {
       const dna = emptyTwinUpdates();
       if (/\bi (love|like)\b/.test(text)) dna.loves_add = [input.text.replace(/^.*\bi (love|like)\s+/i, '').slice(0, 60)];
       if (/\bi want to\b/.test(text)) dna.wants_add = [input.text.replace(/^.*\bi want to\s+/i, '').slice(0, 80)];
-      const base = { query: '', category: '' as const, near: '', filters: [], place_ref: 0, place_name: '', rating: 0, tags: [], scope: '' as const, dna, reply: '', quick_replies: [] };
+      const base = { query: '', category: '' as const, near: '', filters: [], place_ref: 0, place_name: '', rating: 0, tags: [], scope: '' as const, days: 0, dna, reply: '', quick_replies: [] };
       if (/people from my country|where do .* (eat|go)|weekend|holiday/.test(text)) {
         return { ...base, tool: 'community_picks', category: /hotel/.test(text) ? 'hotel' : /weekend|holiday|trip/.test(text) ? 'attraction' : 'food', scope: /weekend|holiday|trip/.test(text) ? 'anywhere' : 'nearby' };
       }
@@ -96,6 +96,8 @@ export function mockProvider(): AgentProvider {
         const ref = input.shown.length ? input.shown[0].ref : 0;
         return { ...base, tool: 'log_visit', place_ref: ref, place_name: ref ? '' : input.text, rating: /\b(love|liked|great)\b/.test(text) ? 1 : 0, reply: 'Nice! I’ll remember it.' };
       }
+      if (/\bplan (my|a)\b|itinerary/.test(text)) return { ...base, tool: 'plan_day', query: /temple/.test(text) ? '寺庙' : '' };
+      if (/journal|recap|summary of my/.test(text)) return { ...base, tool: 'trip_journal', days: /week/.test(text) ? 7 : 30 };
       if (/\bmy (places|food)|where have i been\b/.test(text)) return { ...base, tool: 'get_my_places', category: /food/.test(text) ? 'food' : '' };
       if (/\bsave\b/.test(text) && input.shown.length) return { ...base, tool: 'save_place', place_ref: input.shown[0].ref, reply: 'Saved to Want to go.' };
       if (/^(hi|hello|thanks|thank you)\b/.test(text)) return { ...base, tool: 'none', reply: 'Hi! Ask me for food or places near you.', quick_replies: ['Food near me'] };
@@ -162,6 +164,20 @@ export function mockProvider(): AgentProvider {
       return {
         reply: first ? `My top pick is ${first}. Tap a card to navigate or save it.` : 'I couldn’t find anything for that. Try another search?',
         quick_replies: ['Cheaper options', 'Something else'],
+      };
+    },
+
+    async readImage() {
+      await wait(300);
+      return {
+        kind: 'menu' as const,
+        title: 'Noodle shop menu',
+        summary: 'A small noodle shop, most dishes ¥18–35.',
+        items: [
+          { zh: '牛肉面', name: 'Beef noodle soup', price: '¥22', spicy: 1, contains: ['beef', 'wheat noodles'], warning: '' },
+          { zh: '红烧肉', name: 'Braised pork belly', price: '¥38', spicy: 0, contains: ['pork'], warning: 'Contains pork' },
+        ],
+        picks: ['Beef noodle soup'],
       };
     },
 

@@ -62,17 +62,22 @@ export async function route(mode: RouteMode, from: { lat: number; lng: number },
   return { coords, distanceM: best.distance, durationS: best.duration, steps, source: 'mapbox' };
 }
 
-/** The city (in Chinese, e.g. 北京市) at a GCJ-02 point; municipalities are their own city. Null outside China. */
-export async function cityAt(lat: number, lng: number): Promise<string | null> {
+/**
+ * Where a GCJ-02 point is, in Chinese: the city (e.g. 北京市; municipalities are their own city) and the most
+ * precise area Mapbox knows in China, usually the district (北京市东城区). Both null outside China.
+ */
+export async function placeAt(lat: number, lng: number): Promise<{ city: string | null; area: string | null }> {
   const p = wgs({ lat, lng });
   const url =
     `https://api.mapbox.com/search/geocode/v6/reverse?longitude=${p.longitude.toFixed(6)}&latitude=${p.latitude.toFixed(6)}` +
-    `&types=place,region&language=zh&access_token=${encodeURIComponent(token())}`;
+    `&types=address,street,locality,place,region&language=zh&access_token=${encodeURIComponent(token())}`;
   const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new MapboxError(`Mapbox Geocoding failed (${res.status})`);
-  type Feature = { properties: { feature_type: string; name: string; context?: { country?: { country_code?: string } } } };
+  type Feature = { properties: { feature_type: string; name: string; full_address?: string; context?: { country?: { country_code?: string } } } };
   const features = ((await res.json()) as { features?: Feature[] }).features ?? [];
-  if (!features.some((f) => f.properties.context?.country?.country_code?.toUpperCase() === 'CN')) return null;
-  const pick = features.find((f) => f.properties.feature_type === 'place') ?? features.find((f) => f.properties.feature_type === 'region');
-  return pick?.properties.name || null;
+  if (!features.some((f) => f.properties.context?.country?.country_code?.toUpperCase() === 'CN')) return { city: null, area: null };
+  const of = (type: string) => features.find((f) => f.properties.feature_type === type);
+  const city = (of('place') ?? of('region'))?.properties.name || null;
+  const precise = features[0]?.properties.full_address?.replace(/^中华人民共和国/, '') || null;
+  return { city, area: precise };
 }

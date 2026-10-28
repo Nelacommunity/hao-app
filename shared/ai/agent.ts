@@ -36,6 +36,8 @@ import {
   placesPlanSystemPrompt,
   placesReplySchema,
   placesReplySystemPrompt,
+  scanSchema,
+  scanSystemPrompt,
   uiTranslateSchema,
   uiTranslateSystemPrompt,
   twinSchema,
@@ -52,6 +54,7 @@ import {
   type AgentTurn,
   type AudioInput,
   type GuideTurn,
+  type ImageInput,
   type LanguageTarget,
   type MemoryTurn,
   type NewMemory,
@@ -62,6 +65,7 @@ import {
   type PlacesTool,
   type PlaceText,
   type RoomAgentTurn,
+  type ScanResult,
   type TwinTurn,
   type ConversationSummary,
 } from './types';
@@ -70,7 +74,7 @@ import { z } from 'zod';
 /** smart: agent turns, where reasoning matters. fast: speech-to-text, captions, short translations. room: live room turns. */
 export type Tier = 'smart' | 'fast' | 'room';
 
-export type Part = { text: string } | { audio: AudioInput };
+export type Part = { text: string } | { audio: AudioInput } | { image: ImageInput };
 
 export type TransportRequest = {
   system: string;
@@ -335,6 +339,7 @@ export function agentProvider(backend: ProviderBackend): AgentProvider {
         rating: plan.rating === 1 || plan.rating === -1 ? plan.rating : 0,
         tags: (plan.tags ?? []).filter((t) => typeof t === 'string').slice(0, 5),
         scope: PLACES_SCOPES.includes(plan.scope) ? plan.scope : '',
+        days: Number.isInteger(plan.days) && plan.days > 0 ? Math.min(90, plan.days) : 0,
         // Validated against the profile by the route (applyTwinUpdates).
         dna: { ...emptyTwinUpdates(), ...(plan.dna ?? {}) },
         reply: String(plan.reply ?? '').slice(0, 600),
@@ -399,6 +404,34 @@ export function agentProvider(backend: ProviderBackend): AgentProvider {
       return {
         reply: String(out.reply ?? '').slice(0, 800),
         quick_replies: (out.quick_replies ?? []).filter((q) => typeof q === 'string' && q.trim()).slice(0, 4),
+      };
+    },
+
+    async readImage(input) {
+      const out = await generateJson<ScanResult>(
+        scanSystemPrompt(input.language),
+        [
+          { text: `About the traveller (diet, allergies, spice, budget):\n${input.about || 'Nothing known.'}${input.text ? `\n\nThey ask: ${input.text}` : ''}\n\nThe photo:` },
+          { image: input.image },
+        ],
+        scanSchema
+      );
+      // Model output is untrusted input to the UI: shape and size only.
+      const clip = (v: unknown, n: number) => String(v ?? '').trim().slice(0, n);
+      const items = (Array.isArray(out.items) ? out.items : []).slice(0, 30).map((it) => ({
+        zh: clip(it.zh, 60),
+        name: clip(it.name, 80),
+        price: clip(it.price, 20),
+        spicy: Number.isInteger(it.spicy) ? Math.min(3, Math.max(0, it.spicy)) : 0,
+        contains: (Array.isArray(it.contains) ? it.contains : []).filter((c) => typeof c === 'string').map((c) => c.slice(0, 30)).slice(0, 6),
+        warning: clip(it.warning, 120),
+      }));
+      return {
+        kind: out.kind === 'menu' || out.kind === 'sign' ? out.kind : 'other',
+        title: clip(out.title, 60),
+        summary: clip(out.summary, 1500),
+        items,
+        picks: (Array.isArray(out.picks) ? out.picks : []).filter((p) => typeof p === 'string' && items.some((it) => it.name === p)).slice(0, 3),
       };
     },
 

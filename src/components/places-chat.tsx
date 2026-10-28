@@ -2,6 +2,7 @@
 // swipeable place cards ranked by what people from your country liked, and Hao remembers where you
 // went ("Did you go to …?") to build My Places and My Food.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
@@ -11,6 +12,8 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { parsePreferences } from '@shared/ai/preferences';
 
 import { AssistantMessage, ChatColors, ChatError, HaoMark, QuickReplies, Thinking, UserMessage } from '@/components/chat-ui';
+import { MapListCard } from '@/components/map-list-card';
+import { MenuCard } from '@/components/menu-card';
 import { CardCarousel, PlaceCard, VisitedCard } from '@/components/place-card';
 import { VisitConfirmCard } from '@/components/visit-confirm-card';
 import { Colors, pick, Radius, Spacing, themed } from '@/constants/theme';
@@ -36,14 +39,14 @@ type Props = {
   onBusyChange: (busy: boolean) => void;
 };
 
-export type PlacesChatHandle = { send: (text: string) => void };
+export type PlacesChatHandle = { send: (text: string) => void; scan: () => void };
 
 type Starter = { icon: IconName; color: string; title: string; subtitle: string; prompt: string; tint: 'orangeSoft' | 'redSoft' | 'goldSoft' | 'blueSoft' | 'jadeSoft' };
 
 const STARTERS = themed((): Starter[] => [
   { icon: 'restaurant', color: '#E4572E', title: tx('Food near me'), subtitle: tx('Picked for your taste'), prompt: tx('Find me good food near me'), tint: 'orangeSoft' },
   { icon: 'camera', color: Colors.red, title: tx('Must-see sights'), subtitle: tx('Worth the trip'), prompt: tx('What sights should I see around here?'), tint: 'redSoft' },
-  { icon: 'bag-handle', color: '#E08A1E', title: tx('Shopping'), subtitle: tx('Markets and malls'), prompt: tx('Where can I go shopping nearby?'), tint: 'goldSoft' },
+  { icon: 'map', color: '#E08A1E', title: tx('Plan my day'), subtitle: tx('Sights and meals on a map'), prompt: tx('Plan my day around here'), tint: 'goldSoft' },
   { icon: 'phone-portrait', color: '#2576FF', title: tx('Daily errands'), subtitle: tx('SIM, bank, pharmacy'), prompt: tx('Where is the nearest phone shop to get a SIM card?'), tint: 'blueSoft' },
 ]);
 
@@ -102,17 +105,17 @@ export const PlacesChat = forwardRef<PlacesChatHandle, Props>(function PlacesCha
     scrollRef.current?.scrollToEnd({ animated: true });
   }, [messages.length, busy, questions.length]);
 
-  const send = async (raw: string, coords = here) => {
+  const send = async (raw: string, coords = here, image?: { data: string; mimeType: string }) => {
     const text = raw.trim();
-    if (!text || busy) return;
+    if ((!text && !image) || busy) return;
     setBusy(true);
     onBusyChange(true);
     setError(null);
     setFailedText(null);
     const before = messages;
-    setMessages((m) => [...m, { role: 'user', text }]);
+    setMessages((m) => [...m, { role: 'user', text: text || t('Read this for me'), photo: !!image }]);
     try {
-      const result = await askPlaces({ language: { code: language.code, name: language.name }, text, messages: before, location: coords, city });
+      const result = await askPlaces({ language: { code: language.code, name: language.name }, text, messages: before, location: coords, city, image });
       // Something was saved to the Hao DNA: show it in Me straight away.
       if (result.tools?.some((tool) => tool.tool === 'dna')) refreshProfile().catch(() => {});
       const reply: PlacesMessage = {
@@ -127,7 +130,8 @@ export const PlacesChat = forwardRef<PlacesChatHandle, Props>(function PlacesCha
       setMessages((m) => [...m, reply]);
     } catch (e) {
       setError(e instanceof Error ? e.message : t('Something went wrong'));
-      setFailedText(text);
+      // A photo isn't kept, so it can't be retried with one tap.
+      setFailedText(image ? null : text);
       setMessages(before);
     } finally {
       setBusy(false);
@@ -135,7 +139,19 @@ export const PlacesChat = forwardRef<PlacesChatHandle, Props>(function PlacesCha
     }
   };
 
-  useImperativeHandle(ref, () => ({ send: (text: string) => send(text) }));
+  /** Menu and sign scanner: take a photo (or pick one) and let Hao read it. */
+  const scan = async () => {
+    if (busy) return;
+    const options: ImagePicker.ImagePickerOptions = { mediaTypes: 'images', quality: 0.4, base64: true };
+    // On a phone the camera first (a menu is in front of you); the library when the camera isn't allowed or there's none.
+    const camera = await ImagePicker.requestCameraPermissionsAsync().catch(() => null);
+    const result = camera?.granted ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options);
+    const asset = result.canceled ? null : result.assets[0];
+    if (!asset?.base64) return;
+    send('', here, { data: asset.base64, mimeType: asset.mimeType === 'image/png' ? 'image/png' : 'image/jpeg' });
+  };
+
+  useImperativeHandle(ref, () => ({ send: (text: string) => send(text), scan }));
 
   /** After the user shares their location, ask the same thing again. */
   const shareLocationAndRetry = async (index: number) => {
@@ -205,7 +221,8 @@ export const PlacesChat = forwardRef<PlacesChatHandle, Props>(function PlacesCha
           <View style={styles.memoryRow}>
             <MemoryPill icon="bookmark" label={t('My Places')} onPress={() => router.navigate('/my-places')} />
             <MemoryPill icon="bed" label={t('My Hotels')} onPress={() => router.navigate({ pathname: '/my-places', params: { filter: 'hotels' } })} />
-            <MemoryPill icon="time-outline" label={t('Where have I been?')} onPress={() => send(t('Where have I been recently?'))} />
+            <MemoryPill icon="journal-outline" label={t('Trip journal')} onPress={() => send(t('Make my trip journal for this month'))} />
+            <MemoryPill icon="scan-outline" label={t('Scan a menu')} onPress={scan} />
           </View>
 
           <CommunityNudge nationality={profile?.nationality ?? null} sharing={!!profile?.share_visits} />
@@ -214,7 +231,7 @@ export const PlacesChat = forwardRef<PlacesChatHandle, Props>(function PlacesCha
 
       {messages.map((m, i) =>
         m.role === 'user' ? (
-          <UserMessage key={i} text={m.text} />
+          <UserMessage key={i} text={m.photo ? `📷 ${m.text}` : m.text} />
         ) : (
           <AssistantMessage key={i} text={m.text} animate={m === fresh} speech={language.speech} tools={m.tools}>
             {m.cards?.length ? <Cards cards={m.cards} onVisitChange={(v) => updateVisitCard(i, v)} /> : null}
@@ -241,7 +258,7 @@ export const PlacesChat = forwardRef<PlacesChatHandle, Props>(function PlacesCha
         </View>
       ) : null}
 
-      {busy ? <Thinking label={t('Finding places for you…')} /> : null}
+      {busy ? <Thinking label={messages[messages.length - 1]?.photo ? t('Reading your photo…') : t('Finding places for you…')} /> : null}
       {error ? <ChatError message={error} onRetry={failedText ? () => send(failedText) : undefined} /> : null}
     </ScrollView>
   );
@@ -249,9 +266,16 @@ export const PlacesChat = forwardRef<PlacesChatHandle, Props>(function PlacesCha
 
 function Cards({ cards, onVisitChange }: { cards: ChatCard[]; onVisitChange: (visit: VisitCardData) => void }) {
   const visits = cards.filter((c) => c.type === 'visit_confirm');
-  const carousel = cards.filter((c) => c.type !== 'visit_confirm');
+  const carousel = cards.filter((c) => c.type === 'place' || c.type === 'food' || c.type === 'visited');
   return (
     <View style={{ gap: 12 }}>
+      {cards.map((c, i) =>
+        c.type === 'day_plan' || c.type === 'journal' ? (
+          <MapListCard key={i} data={c.data} kind={c.type} />
+        ) : c.type === 'menu' ? (
+          <MenuCard key={i} data={c.data} />
+        ) : null
+      )}
       {visits.map((c) => (
         <VisitConfirmCard key={c.data.visitId} data={c.data} onChange={onVisitChange} />
       ))}

@@ -189,6 +189,9 @@ const TOOL_ICONS: Record<ToolUse['tool'], keyof typeof Ionicons.glyphMap> = {
   story: 'play-circle-outline',
   dna: 'finger-print-outline',
   community_picks: 'people-outline',
+  plan_day: 'map-outline',
+  trip_journal: 'journal-outline',
+  read_photo: 'scan-outline',
 };
 
 function toolLine(t: ReturnType<typeof useT>, tool: ToolUse): { title: string; details: string[] } {
@@ -222,6 +225,15 @@ function toolLine(t: ReturnType<typeof useT>, tool: ToolUse): { title: string; d
       return { title: t('Saved to your Hao DNA'), details: tool.items };
     case 'community_picks':
       return { title: t('Places people from your country liked · {count}', { count: tool.count }), details: [] };
+    case 'plan_day':
+      return { title: t('Planned your day · {count} stops', { count: tool.stops }), details: [t('Routes from Mapbox')] };
+    case 'trip_journal':
+      return { title: t('Wrote your trip journal · {count} places', { count: tool.count }), details: [] };
+    case 'read_photo':
+      return {
+        title: tool.kind === 'menu' ? t('Read the menu · {count} dishes', { count: tool.count }) : t('Read the photo'),
+        details: tool.flagged ? [t('{count} may not suit your diet', { count: tool.flagged })] : [],
+      };
   }
 }
 

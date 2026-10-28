@@ -13,7 +13,8 @@ export type GuideTopicId =
   | 'shopping'
   | 'hotel'
   | 'health'
-  | 'delivery';
+  | 'delivery'
+  | 'prices';
 
 export const GuideTopics: { id: GuideTopicId; title: string; emoji: string; starter: string }[] = [
   { id: 'wechat', title: tx('Set up WeChat'), emoji: '💬', starter: tx('Help me create a WeChat account and get it working.') },
@@ -26,6 +27,7 @@ export const GuideTopics: { id: GuideTopicId; title: string; emoji: string; star
   { id: 'hotel', title: tx('Hotel & registration'), emoji: '🏨', starter: tx('What do I need for hotel check-in and registration?') },
   { id: 'health', title: tx('Health & emergencies'), emoji: '🏥', starter: tx('What should I do if I get sick or need help urgently?') },
   { id: 'delivery', title: tx('Food delivery & apps'), emoji: '🛵', starter: tx('How can I order food delivery?') },
+  { id: 'prices', title: tx('Is this price fair?'), emoji: '💴', starter: tx('Is this price fair? A taxi driver wants ¥80 for a short ride.') },
 ];
 
 export type GuideApp = 'wechat' | 'alipay' | 'didi' | 'amap' | 'railway12306' | 'trip' | 'meituan' | 'taobao' | 'dianping';

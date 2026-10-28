@@ -21,10 +21,12 @@ import { ChatComposer, ChatModes, type ChatMode } from '@/components/chat-compos
 import { ChatHistory } from '@/components/chat-history';
 import { AssistantMessage, ChatColors, ChatError, ChatWelcome, Suggestion, Thinking, ToolUses, UserMessage } from '@/components/chat-ui';
 import { GuideChat, type GuideChatHandle } from '@/components/guide-chat';
+import { HeaderMenu } from '@/components/header-menu';
 import { LanguagePicker } from '@/components/language-picker';
 import { EMPTY_MEMORY_CHAT, MemoryChat, type MemoryChatData, type MemoryChatHandle } from '@/components/memory-chat';
 import { ModeSheet } from '@/components/mode-sheet';
 import { EMPTY_PLACES_CHAT, PlacesChat, type PlacesChatData, type PlacesChatHandle } from '@/components/places-chat';
+import { SosSheet } from '@/components/sos-sheet';
 import { SpeakButton } from '@/components/speak-button';
 import { Colors, Radius, Spacing, themed } from '@/constants/theme';
 import { askAgent, entriesForTurn, type LogEntry, type Speaker } from '@/lib/agent';
@@ -88,6 +90,8 @@ export default function AgentScreen() {
   const [lang, setLang] = useLanguagePreference();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sosOpen, setSosOpen] = useState(false);
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   // Places: food and places picked for you (the default). Interpret: Hao talks to a local for you.
   // Guide: Hao coaches you through tasks (WeChat, payments, transport…).
   // Other screens can open a mode directly, e.g. Home's Translate button: /translate?mode=interpret.
@@ -293,25 +297,17 @@ export default function AgentScreen() {
             </View>
           </View>
 
-          {/* Language, QR rooms, chat history and new chat share one pill. */}
-          <View style={styles.pill}>
-            <Pressable onPress={() => setPickerOpen(true)} style={styles.pillItem} accessibilityLabel={t('Your language: {language}. Change', { language: lang.name })}>
-              <Text style={{ fontSize: 16 }}>{lang.flag}</Text>
-              <Text style={styles.pillText} numberOfLines={1}>
-                {lang.code.startsWith('custom:') ? lang.native.slice(0, 10) : lang.code.toUpperCase()}
-              </Text>
+          {/* New chat, and everything else (SOS, chats, QR rooms, language) in one dropdown. */}
+          <View style={styles.actions}>
+            <Pressable onPress={newChat} style={({ pressed }) => [styles.iconButton, pressed && { opacity: 0.7 }]} accessibilityRole="button" accessibilityLabel={t('New chat')}>
+              <Ionicons name="create-outline" size={20} color={Colors.ink} />
             </Pressable>
-            <View style={styles.pillDivider} />
-            <Pressable onPress={() => router.push('/room')} style={styles.pillItem} accessibilityLabel={t('QR rooms: talk on two phones or broadcast a tour')}>
-              <Ionicons name="qr-code-outline" size={18} color={Colors.ink} />
-            </Pressable>
-            <View style={styles.pillDivider} />
-            <Pressable onPress={() => setHistoryOpen(true)} style={styles.pillItem} accessibilityLabel={t('Chats')}>
-              <Ionicons name="time-outline" size={18} color={Colors.ink} />
-            </Pressable>
-            <View style={styles.pillDivider} />
-            <Pressable onPress={newChat} style={styles.pillItem} accessibilityLabel={t('New chat')}>
-              <Ionicons name="create-outline" size={18} color={Colors.ink} />
+            <Pressable
+              onPress={() => setHeaderMenuOpen(true)}
+              style={({ pressed }) => [styles.iconButton, pressed && { opacity: 0.7 }]}
+              accessibilityRole="button"
+              accessibilityLabel={t('More: emergency, chats, QR rooms, language')}>
+              <Ionicons name="ellipsis-horizontal" size={20} color={Colors.ink} />
             </Pressable>
           </View>
         </View>
@@ -390,6 +386,7 @@ export default function AgentScreen() {
           onSend={send}
           onOpenMenu={() => setMenuOpen(true)}
           onOpenDiscover={() => router.navigate('/discover')}
+          onScan={mode === 'places' ? () => placesRef.current?.scan() : undefined}
           busy={{ places: placesBusy, interpret: busy, guide: guideBusy, memory: memoryBusy }[mode]}
           voice={
             mode === 'interpret'
@@ -407,6 +404,22 @@ export default function AgentScreen() {
         />
       </KeyboardAvoidingView>
 
+      <HeaderMenu
+        visible={headerMenuOpen}
+        onClose={() => setHeaderMenuOpen(false)}
+        items={[
+          { icon: 'alert-circle', label: t('Emergency SOS'), danger: true, onPress: () => setSosOpen(true) },
+          { icon: 'time-outline', label: t('Chats'), onPress: () => setHistoryOpen(true) },
+          { icon: 'qr-code-outline', label: t('QR rooms'), onPress: () => router.push('/room') },
+          {
+            icon: 'language-outline',
+            label: t('Language'),
+            detail: `${lang.flag} ${lang.code.startsWith('custom:') ? lang.native.slice(0, 10) : lang.name}`,
+            onPress: () => setPickerOpen(true),
+          },
+        ]}
+      />
+      {sosOpen ? <SosSheet onClose={() => setSosOpen(false)} /> : null}
       <ModeSheet
         visible={menuOpen}
         mode={mode}
@@ -493,19 +506,8 @@ const styles = themed(() => StyleSheet.create({
   markText: { color: Colors.gold, fontSize: 19, fontWeight: '900' },
   brandName: { fontSize: 17, fontWeight: '800', color: Colors.ink },
   brandMode: { fontSize: 12, fontWeight: '600', color: Colors.muted },
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.card,
-    borderWidth: 1,
-    borderColor: Colors.line,
-    paddingHorizontal: 4,
-  },
-  pillItem: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 40, paddingHorizontal: 10 },
-  pillText: { fontSize: 13, fontWeight: '800', color: Colors.ink, maxWidth: 80 },
-  pillDivider: { width: 1, height: 18, backgroundColor: Colors.line },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  iconButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.line },
   mission: {
     flexDirection: 'row',
     alignItems: 'center',

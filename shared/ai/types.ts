@@ -104,7 +104,10 @@ export type ToolUse =
   | { tool: 'save_place'; place: string }
   | { tool: 'story'; title: string }
   | { tool: 'dna'; items: string[] }
-  | { tool: 'community_picks'; count: number; nationality: string };
+  | { tool: 'community_picks'; count: number; nationality: string }
+  | { tool: 'plan_day'; stops: number }
+  | { tool: 'trip_journal'; count: number }
+  | { tool: 'read_photo'; kind: 'menu' | 'sign' | 'other'; count: number; flagged: number };
 
 /** The text of a place a traveller reads; the Chinese original stays alongside it in the app. */
 export type PlaceText = { name: string; address: string; type: string; tags: string[] };
@@ -208,7 +211,7 @@ export type GuideTurn = {
 };
 
 // ─── Places chat: recommendations and the places the user has been ─────────
-export type PlacesTool = 'search_places' | 'community_picks' | 'log_visit' | 'get_my_places' | 'save_place' | 'none';
+export type PlacesTool = 'search_places' | 'community_picks' | 'plan_day' | 'trip_journal' | 'log_visit' | 'get_my_places' | 'save_place' | 'none';
 export type PlacesCategory = 'food' | 'attraction' | 'shop' | 'service' | 'hotel';
 export type PlacesFilter = 'halal' | 'vegetarian' | 'cheap' | 'spicy' | 'not_spicy' | 'good_for_groups';
 
@@ -246,6 +249,8 @@ export type PlacesPlan = {
   tags: string[];
   /** community_picks: how far to look. nearby (default), city (the whole city) or anywhere in China (trips). */
   scope: 'nearby' | 'city' | 'anywhere' | '';
+  /** trip_journal: how many days back to look (1–90); 0 means the default (30). */
+  days: number;
   /** Important things the user said about themselves this turn, saved to their Hao DNA. */
   dna: TwinUpdates;
   /** The final reply when tool is none, log_visit or save_place; ignored for searches. */
@@ -265,6 +270,45 @@ export type PlacesReplyInput = {
 };
 
 export type PlacesReply = { reply: string; quick_replies: string[] };
+
+/** A photo of a menu or sign, read for the traveller (menu and sign scanner). */
+export type ImageInput = { data: string; mimeType: string };
+
+export type ScanInput = {
+  image: ImageInput;
+  language: LanguageTarget;
+  /** What the traveller asked with the photo, if anything ("is this halal?"). */
+  text: string;
+  /** Hao DNA and saved preferences as plain text: diet, allergies, spice, budget. */
+  about: string;
+};
+
+export type ScanItem = {
+  /** As printed, in Chinese. */
+  zh: string;
+  /** In the traveller's language. */
+  name: string;
+  /** "¥38", or empty when the photo shows none. */
+  price: string;
+  /** 0 not spicy … 3 very spicy. */
+  spicy: number;
+  /** Main ingredients in the traveller's language. */
+  contains: string[];
+  /** Why it clashes with the traveller's diet or allergies, in their language; empty when it doesn't. */
+  warning: string;
+};
+
+export type ScanResult = {
+  kind: 'menu' | 'sign' | 'other';
+  /** A short title in the traveller's language ("Noodle shop menu", "Metro exit sign"). */
+  title: string;
+  /** Menus: a one-line overview. Signs and other text: the full translation. */
+  summary: string;
+  /** Menus only: the dishes, at most 30. */
+  items: ScanItem[];
+  /** Menus: up to 3 dishes that fit the traveller best, as written in items[].name. */
+  picks: string[];
+};
 
 // ─── Digital twin ("Hao DNA"): what Hao knows about the user, built by chatting ───
 export type TravellerType = 'student' | 'tourist';
@@ -355,6 +399,8 @@ export interface AgentProvider {
   placesPlan(input: PlacesPlanInput): Promise<PlacesPlan>;
   /** Places chat, step 2: a short reply grounded only in what the tool returned. */
   placesReply(input: PlacesReplyInput): Promise<PlacesReply>;
+  /** Menu and sign scanner: reads a photo and translates it, flagging dishes that clash with the traveller. */
+  readImage(input: ScanInput): Promise<ScanResult>;
   /** Digital twin chat: one question at a time, and the profile changes the user's answers imply. */
   twinTurn(input: TwinTurnInput): Promise<TwinTurn>;
   /** Summarises a saved QR-room conversation for the user's chats, memory and Hao DNA. */
