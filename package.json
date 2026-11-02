@@ -66,6 +66,7 @@
     "test:ranking": "node --test \"shared/places/*.test.ts\"",
     "test:twin": "node --test \"shared/ai/twin.test.ts\"",
     "test:stories": "node --test \"shared/stories/*.test.ts\"",
+    "test:chat": "node --test \"src/lib/*.test.ts\" \"src/lib/server/*.test.ts\"",
     "seed:places": "node scripts/seed-places.mjs",
     "stories:facts": "node --no-warnings scripts/build-story-facts.mjs",
     "seed:stories": "node scripts/seed-stories.mjs",

@@ -22,7 +22,7 @@ const ALLERGENS: [RegExp, string][] = [
   [/milk|dairy|lactose|牛奶|乳/i, '牛奶和奶制品'],
   [/gluten|wheat|麸质|小麦/i, '小麦（面筋）'],
   [/\bsoy|soya|大豆|黄豆/i, '大豆'],
-  [/sesame|芝麻/i, '芝麻'],
+  [/sesam|芝麻/i, '芝麻'],
   [/msg|味精/i, '味精'],
 ];
 
@@ -39,7 +39,9 @@ function kitchenNotes(t: T, prefs: Preferences | null): { zh: string; meaning: s
   if (diet.has('no_beef') && !diet.has('vegetarian') && !diet.has('vegan')) notes.push({ zh: '请不要放牛肉。', meaning: t('No beef, please.') });
   if (diet.has('no_seafood') && !diet.has('vegan')) notes.push({ zh: '请不要放海鲜。', meaning: t('No seafood, please.') });
 
-  const allergens = [...new Set(prefs.allergies.flatMap((a) => ALLERGENS.filter(([re]) => re.test(a)).map(([, zh]) => zh)))];
+  // Accents off, so "sésame" or "cacahuète" match like their plain spellings.
+  const plain = prefs.allergies.map((a) => a.normalize('NFD').replace(/\p{M}/gu, ''));
+  const allergens = ALLERGENS.filter(([re]) => plain.some((a) => re.test(a))).map(([, zh]) => zh);
   if (allergens.length) {
     notes.push({
       zh: `我对${allergens.join('、')}过敏，请一定不要放。`,
