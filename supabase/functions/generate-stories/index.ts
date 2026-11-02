@@ -2,7 +2,11 @@
 // Called nightly by pg_cron (service role key, *_stories_cron.sql) or on demand by an admin
 // (their user token; profiles.is_admin). All writing logic is shared/stories/generate.ts.
 //
-// POST { cities?: string[], dry_run?: boolean } → { run_id, created, rejected, model_calls, stopped }
+// POST { cities?: string[], dry_run?: boolean, resume?: boolean } → { run_id, created, rejected, model_calls, stopped }
+//
+// One city takes 5–8 minutes and the runtime stops a request after 15, so a night's run is split across several
+// cron calls with resume: true. Each skips the cities and languages that already have stories today (China time)
+// and only starts a new city in its first few minutes, so every call ends in time and the next one carries on.
 //
 // Secrets (supabase secrets set …): QWEN_API_KEY, AMAP_KEY. Optional: QWEN_BASE_URL, QWEN_STORY_MODEL,
 // STORIES_MAX_CALLS, STORIES_AUTO_APPROVE_ALL=true (demo), STORIES_AI_IMAGES=true (+ QWEN_IMAGE_MODEL),
@@ -23,6 +27,8 @@ const env = (name: string) => Deno.env.get(name) ?? '';
 const LANGUAGE_NAMES: Record<string, string> = { en: 'English', fr: 'French', es: 'Spanish', ar: 'Arabic', ru: 'Russian', sw: 'Swahili', pt: 'Portuguese' };
 const DAY = 86_400_000;
 const LOVED_RADIUS_KM = 60;
+/** A new city is only started this long after the request began (a city can take ~8 min; the limit is 15). */
+const START_CITIES_FOR_MS = 5 * 60_000;
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 
@@ -65,9 +71,11 @@ Deno.serve(async (request) => {
     trigger = 'admin';
   }
 
-  const body = (await request.json().catch(() => ({}))) as { cities?: unknown; dry_run?: unknown };
+  const startedAt = Date.now();
+  const body = (await request.json().catch(() => ({}))) as { cities?: unknown; dry_run?: unknown; resume?: unknown };
   const onlyCities = Array.isArray(body.cities) ? body.cities.map(String) : null;
   const dryRun = body.dry_run === true;
+  const resume = body.resume === true;
 
   // ─── Model, AMap, images ────────────────────────────────────────────────────
   const mock = env('STORIES_MOCK') === 'true';
@@ -100,6 +108,17 @@ Deno.serve(async (request) => {
     db.from('story_topics').select('id, category, label, enabled, wikipedia, nationality, image_file'),
     db.from('holidays').select('*').gte('starts_on', today).lte('starts_on', new Date(now.getTime() + 30 * DAY).toISOString().slice(0, 10)),
   ]);
+
+  // resume: the languages each city still needs today (China time). Nothing left → nothing to do, no run row.
+  const doneToday = new Set<string>();
+  if (resume) {
+    const { data: written } = await db.from('stories').select('city, language').gte('created_at', new Date(`${today}T00:00:00+08:00`).toISOString());
+    for (const s of written ?? []) doneToday.add(`${s.city}|${s.language}`);
+  }
+  const todo = (city: { city: string; languages: string[] }) => city.languages.filter((code) => !doneToday.has(`${city.city}|${code}`));
+  if (resume && !(cities ?? []).some((c) => (!onlyCities || onlyCities.includes(c.city)) && todo(c).length)) {
+    return json({ run_id: null, dry_run: dryRun, created: 0, rejected: 0, model_calls: 0, stopped: null, done_for_today: true });
+  }
 
   // Nationalities of Hao's users, most first: who gets a "your country and China" story.
   const { data: people } = await db.from('profiles').select('nationality').not('nationality', 'is', null).limit(20_000);
@@ -155,6 +174,13 @@ Deno.serve(async (request) => {
   for (const city of cities ?? []) {
     if (onlyCities && !onlyCities.includes(city.city)) continue;
     if (stopped) break;
+    const languages = todo(city);
+    if (!languages.length) continue;
+    if (Date.now() - startedAt > START_CITIES_FOR_MS) {
+      // Not enough time left for another city: the next cron call picks it up.
+      stopped = 'time';
+      break;
+    }
     const fail = (error: string) => errors.push({ city: city.city, language: '', type: 'place_spotlight', key: 'inputs', error });
 
     // Facts from AMap and the community stats. A failing source just means fewer story types tonight.
@@ -196,7 +222,7 @@ Deno.serve(async (request) => {
       Promise.all(homeTopics({ ...pick, nationalities }).map(article)),
     ]);
 
-    for (const code of city.languages as string[]) {
+    for (const code of languages) {
       const result = await generateStories({
         city: { city: city.city, cityZh: city.city_zh },
         language: { code, name: LANGUAGE_NAMES[code] ?? code },
