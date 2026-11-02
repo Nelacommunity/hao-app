@@ -49,3 +49,6 @@ example
 
 # Supabase → VPS migration: dumps hold user data and secrets
 supabase/.vps-backup/
+
+# Promo videos and their render sources (large; kept out of git and EAS uploads)
+promo/
