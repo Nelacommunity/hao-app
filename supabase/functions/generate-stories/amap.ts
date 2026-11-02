@@ -34,15 +34,37 @@ function categoryOf(typecode: string) {
   return 'landmark';
 }
 
+/** Time between AMap requests: the free Web Service plan allows only a few per second (CUQPS_HAS_EXCEEDED_THE_LIMIT). */
+const SPACING_MS = 350;
+/** AMap's "too many requests per second" codes, worth one retry after a pause. */
+const TOO_FAST = new Set(['10019', '10020', '10021']);
+
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export function amapClient(key: string): Amap {
-  async function call<T>(path: string, params: Record<string, string>): Promise<T> {
+  // Every request waits for the one before it, so callers can still use Promise.all.
+  let queue: Promise<unknown> = Promise.resolve();
+
+  async function once<T>(path: string, params: Record<string, string>) {
     const url = new URL(path, BASE);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     url.searchParams.set('key', key);
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    const json = (await res.json()) as T & { status?: string; info?: string; infocode?: string };
-    if (json.status !== '1') throw new Error(`AMap error: ${json.info ?? res.status} (${json.infocode ?? '?'})`);
-    return json;
+    return { res, json: (await res.json()) as T & { status?: string; info?: string; infocode?: string } };
+  }
+
+  function call<T>(path: string, params: Record<string, string>): Promise<T> {
+    const run = queue.then(async () => {
+      let { res, json } = await once<T>(path, params);
+      if (json.status !== '1' && TOO_FAST.has(String(json.infocode))) {
+        await pause(1200);
+        ({ res, json } = await once<T>(path, params));
+      }
+      if (json.status !== '1') throw new Error(`AMap error: ${json.info ?? res.status} (${json.infocode ?? '?'})`);
+      return json;
+    });
+    queue = run.catch(() => {}).then(() => pause(SPACING_MS));
+    return run;
   }
 
   function toFact(poi: AmapPoi, en?: AmapPoi): Omit<PlaceFact, 'placeId'> {
