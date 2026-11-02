@@ -31,6 +31,7 @@ import {
   PLACES_FILTERS,
   PLACES_SCOPES,
   PLACES_TOOLS,
+  STAFF_TARGETS,
   dnaCaptureRules,
   placesPlanSchema,
   placesPlanSystemPrompt,
@@ -66,6 +67,7 @@ import {
   type PlaceText,
   type RoomAgentTurn,
   type ScanResult,
+  type StaffLine,
   type TwinTurn,
   type ConversationSummary,
 } from './types';
@@ -200,6 +202,20 @@ const cleanMemories = (list: NewMemory[] | undefined, max = 3) =>
     .map((m) => ({ kind: m.kind, text: m.text.trim().slice(0, 300) }));
 
 const audioPart = (audio: AudioInput): Part => ({ audio });
+
+const HAN = /\p{Script=Han}/u;
+
+/** A line for a waiter or shopkeeper from model output: kept only when its Chinese really is Chinese. */
+function staffLine(raw: unknown, fallbackTo: StaffLine['to'] = 'anyone'): StaffLine {
+  const v = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const zh = String(v.zh ?? '').trim().slice(0, 300);
+  if (!HAN.test(zh)) return { zh: '', meaning: '', to: fallbackTo };
+  return {
+    zh,
+    meaning: String(v.meaning ?? '').trim().slice(0, 400),
+    to: STAFF_TARGETS.includes(String(v.to)) ? (v.to as StaffLine['to']) : fallbackTo,
+  };
+}
 
 export function agentProvider(backend: ProviderBackend): AgentProvider {
   async function generateJson<T>(
@@ -340,6 +356,7 @@ export function agentProvider(backend: ProviderBackend): AgentProvider {
         tags: (plan.tags ?? []).filter((t) => typeof t === 'string').slice(0, 5),
         scope: PLACES_SCOPES.includes(plan.scope) ? plan.scope : '',
         days: Number.isInteger(plan.days) && plan.days > 0 ? Math.min(90, plan.days) : 0,
+        say: staffLine(plan.say),
         // Validated against the profile by the route (applyTwinUpdates).
         dna: { ...emptyTwinUpdates(), ...(plan.dna ?? {}) },
         reply: String(plan.reply ?? '').slice(0, 600),
@@ -408,14 +425,12 @@ export function agentProvider(backend: ProviderBackend): AgentProvider {
     },
 
     async readImage(input) {
-      const out = await generateJson<ScanResult>(
-        scanSystemPrompt(input.language),
-        [
-          { text: `About the traveller (diet, allergies, spice, budget):\n${input.about || 'Nothing known.'}${input.text ? `\n\nThey ask: ${input.text}` : ''}\n\nThe photo:` },
-          { image: input.image },
-        ],
-        scanSchema
-      );
+      const ask = `About the traveller (diet, allergies, spice, budget):\n${input.about || 'Nothing known.'}${input.text ? `\n\nThey ask: ${input.text}` : ''}`;
+      // A photo goes to the omni model; the text of a page a QR code opened is plain text for the smart model.
+      const parts: Part[] = input.image
+        ? [{ text: `${ask}\n\nThe photo:` }, { image: input.image }]
+        : [{ text: `${ask}\n\nThe page the QR code opened (its visible text, may be cut short):\n${(input.page ?? '').slice(0, 12_000)}` }];
+      const out = await generateJson<ScanResult>(scanSystemPrompt(input.language), parts, scanSchema);
       // Model output is untrusted input to the UI: shape and size only.
       const clip = (v: unknown, n: number) => String(v ?? '').trim().slice(0, n);
       const items = (Array.isArray(out.items) ? out.items : []).slice(0, 30).map((it) => ({
@@ -426,12 +441,14 @@ export function agentProvider(backend: ProviderBackend): AgentProvider {
         contains: (Array.isArray(it.contains) ? it.contains : []).filter((c) => typeof c === 'string').map((c) => c.slice(0, 30)).slice(0, 6),
         warning: clip(it.warning, 120),
       }));
+      const kind = out.kind === 'menu' || out.kind === 'sign' || out.kind === 'product' ? out.kind : 'other';
       return {
-        kind: out.kind === 'menu' || out.kind === 'sign' ? out.kind : 'other',
+        kind,
         title: clip(out.title, 60),
         summary: clip(out.summary, 1500),
         items,
         picks: (Array.isArray(out.picks) ? out.picks : []).filter((p) => typeof p === 'string' && items.some((it) => it.name === p)).slice(0, 3),
+        say: staffLine(out.say, kind === 'product' ? 'shop' : kind === 'menu' ? 'restaurant' : 'anyone'),
       };
     },
 

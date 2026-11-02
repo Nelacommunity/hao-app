@@ -1,14 +1,22 @@
 // A photo Hao read (menu and sign scanner). Menus list each dish in the traveller's language with its price and
 // spice, Hao's picks first, and a red warning on anything that clashes with their Hao DNA. Signs show the
-// translation. Tap a dish to hear its Chinese name, to point at or say when ordering.
+// translation, products what they are. Tap a dish to hear its Chinese name, or + to add it to an order, then
+// "Tell the restaurant" shows the order in Chinese for the waiter, with the traveller's diet notes.
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { parsePreferences } from '@shared/ai/preferences';
+import type { StaffLine } from '@shared/ai/types';
 
 import { ChatColors } from '@/components/chat-ui';
+import { StaffSheet } from '@/components/say-card';
 import { SpeakButton } from '@/components/speak-button';
 import { Colors, Radius, themed } from '@/constants/theme';
 import type { MenuCardData, MenuItem } from '@/data/place-cards';
+import { useAuth } from '@/lib/auth';
 import { tx, useT } from '@/lib/i18n';
+import { orderLine } from '@/lib/order';
 
 // What the server's own diet check found (conflictOf), when the model gave no warning of its own.
 const CLASHES: Record<string, string> = {
@@ -32,16 +40,31 @@ export function MenuCard({ data }: { data: MenuCardData }) {
   // Picks first, then the rest in menu order; dishes to avoid stay where they are, marked.
   const items = [...data.items.filter((i) => picks.has(i.name)), ...data.items.filter((i) => !picks.has(i.name))];
   const flagged = data.items.filter((i) => warningOf(t, i)).length;
+  const { profile } = useAuth();
+  // How many of each dish, by its place in data.items.
+  const [order, setOrder] = useState<Record<number, number>>({});
+  const [showing, setShowing] = useState<StaffLine | null>(null);
+  const ordering = data.kind === 'menu' && data.items.length > 0;
+  const total = Object.values(order).reduce((a, b) => a + b, 0);
+  const change = (index: number, by: number) => setOrder((o) => ({ ...o, [index]: Math.max(0, Math.min(20, (o[index] ?? 0) + by)) }));
+  const tellRestaurant = () =>
+    setShowing(
+      orderLine(
+        t,
+        data.items.map((item, i) => ({ zh: item.zh, name: item.name, count: order[i] ?? 0 })),
+        parsePreferences(profile?.preferences)
+      )
+    );
 
   return (
     <View style={styles.card}>
       <View style={styles.header}>
         <View style={styles.icon}>
-          <Ionicons name={data.kind === 'menu' ? 'restaurant' : 'document-text'} size={18} color={Colors.red} />
+          <Ionicons name={data.kind === 'menu' ? 'restaurant' : data.kind === 'product' ? 'pricetag' : 'document-text'} size={18} color={Colors.red} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.title} numberOfLines={2}>
-            {data.title || (data.kind === 'menu' ? t('Menu') : t('Translation'))}
+            {data.title || (data.kind === 'menu' ? t('Menu') : data.kind === 'product' ? t('Item') : t('Translation'))}
           </Text>
           {data.kind === 'menu' ? (
             <Text style={[styles.subtitle, flagged ? { color: Colors.redDark } : null]}>
@@ -55,6 +78,8 @@ export function MenuCard({ data }: { data: MenuCardData }) {
 
       {items.map((item, i) => {
         const warning = warningOf(t, item);
+        const index = data.items.indexOf(item);
+        const count = order[index] ?? 0;
         return (
           <View key={`${item.zh}-${i}`} style={[styles.dish, warning ? styles.dishWarn : null]}>
             <View style={{ flex: 1, gap: 2 }}>
@@ -82,7 +107,31 @@ export function MenuCard({ data }: { data: MenuCardData }) {
             </View>
             <View style={styles.side}>
               {item.price ? <Text style={styles.price}>{item.price}</Text> : null}
-              <SpeakButton text={item.zh} size={16} />
+              <View style={styles.sideRow}>
+                <SpeakButton text={item.zh} size={16} />
+                {ordering ? (
+                  count ? (
+                    <View style={styles.stepper}>
+                      <Pressable onPress={() => change(index, -1)} hitSlop={6} accessibilityRole="button" accessibilityLabel={t('One less {dish}', { dish: item.name })}>
+                        <Ionicons name="remove" size={18} color={Colors.red} />
+                      </Pressable>
+                      <Text style={styles.count}>{count}</Text>
+                      <Pressable onPress={() => change(index, 1)} hitSlop={6} accessibilityRole="button" accessibilityLabel={t('One more {dish}', { dish: item.name })}>
+                        <Ionicons name="add" size={18} color={Colors.red} />
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Pressable
+                      onPress={() => change(index, 1)}
+                      hitSlop={6}
+                      style={({ pressed }) => [styles.add, pressed && { opacity: 0.7 }]}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('Add {dish} to my order', { dish: item.name })}>
+                      <Ionicons name="add" size={18} color="#fff" />
+                    </Pressable>
+                  )
+                ) : null}
+              </View>
             </View>
           </View>
         );
@@ -90,9 +139,19 @@ export function MenuCard({ data }: { data: MenuCardData }) {
 
       {data.kind === 'menu' ? (
         <View style={styles.footer}>
-          <Text style={styles.footerText}>{t('Tap the speaker to hear a dish in Chinese, or point at it on the menu.')}</Text>
+          {total ? (
+            <Pressable onPress={tellRestaurant} style={({ pressed }) => [styles.tell, pressed && { opacity: 0.85 }]} accessibilityRole="button">
+              <Ionicons name="megaphone" size={17} color="#fff" />
+              <Text style={styles.tellText}>{t('Tell the restaurant · {count}', { count: total })}</Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.footerText}>
+              {ordering ? t('Tap + on what you want, then Hao tells the restaurant in Chinese.') : t('Tap the speaker to hear a dish in Chinese, or point at it on the menu.')}
+            </Text>
+          )}
         </View>
       ) : null}
+      <StaffSheet line={showing} onClose={() => setShowing(null)} />
     </View>
   );
 }
@@ -114,6 +173,12 @@ const styles = themed(() =>
     warning: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
     warningText: { flexShrink: 1, fontSize: 13, fontWeight: '600', color: Colors.redDark },
     side: { alignItems: 'flex-end', justifyContent: 'space-between', gap: 6 },
+    sideRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    add: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.red },
+    stepper: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 32, paddingHorizontal: 8, borderRadius: 16, backgroundColor: Colors.redSoft },
+    count: { minWidth: 14, textAlign: 'center', fontSize: 15, fontWeight: '700', color: Colors.red },
+    tell: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: Radius.pill, backgroundColor: Colors.red },
+    tellText: { fontSize: 15, fontWeight: '700', color: '#fff' },
     price: { fontSize: 15, fontWeight: '700', color: ChatColors.text },
     footer: { paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: ChatColors.border },
     footerText: { fontSize: 12.5, color: ChatColors.faint },

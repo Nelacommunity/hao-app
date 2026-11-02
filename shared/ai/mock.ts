@@ -88,13 +88,16 @@ export function mockProvider(): AgentProvider {
       const dna = emptyTwinUpdates();
       if (/\bi (love|like)\b/.test(text)) dna.loves_add = [input.text.replace(/^.*\bi (love|like)\s+/i, '').slice(0, 60)];
       if (/\bi want to\b/.test(text)) dna.wants_add = [input.text.replace(/^.*\bi want to\s+/i, '').slice(0, 80)];
-      const base = { query: '', category: '' as const, near: '', filters: [], place_ref: 0, place_name: '', rating: 0, tags: [], scope: '' as const, days: 0, dna, reply: '', quick_replies: [] };
+      const base = { query: '', category: '' as const, near: '', filters: [], place_ref: 0, place_name: '', rating: 0, tags: [], scope: '' as const, days: 0, say: { zh: '', meaning: '', to: 'anyone' as const }, dna, reply: '', quick_replies: [] };
       if (/people from my country|where do .* (eat|go)|weekend|holiday/.test(text)) {
         return { ...base, tool: 'community_picks', category: /hotel/.test(text) ? 'hotel' : /weekend|holiday|trip/.test(text) ? 'attraction' : 'food', scope: /weekend|holiday|trip/.test(text) ? 'anywhere' : 'nearby' };
       }
       if (/\b(went|visited|been to|had (lunch|dinner))\b/.test(text)) {
         const ref = input.shown.length ? input.shown[0].ref : 0;
         return { ...base, tool: 'log_visit', place_ref: ref, place_name: ref ? '' : input.text, rating: /\b(love|liked|great)\b/.test(text) ? 1 : 0, reply: 'Nice! I’ll remember it.' };
+      }
+      if (/\btell (the|them|him|her)\b|\bi want (this|the)\b/.test(text)) {
+        return { ...base, tool: 'tell_staff', say: { zh: '你好，我要一份牛肉面，不要辣。谢谢！', meaning: 'Hello, one beef noodle soup please, not spicy. Thank you!', to: 'restaurant' as const }, reply: 'Show them this, or tap play.' };
       }
       if (/\bplan (my|a)\b|itinerary/.test(text)) return { ...base, tool: 'plan_day', query: /temple/.test(text) ? '寺庙' : '' };
       if (/journal|recap|summary of my/.test(text)) return { ...base, tool: 'trip_journal', days: /week/.test(text) ? 7 : 30 };
@@ -178,6 +181,7 @@ export function mockProvider(): AgentProvider {
           { zh: '红烧肉', name: 'Braised pork belly', price: '¥38', spicy: 0, contains: ['pork'], warning: 'Contains pork' },
         ],
         picks: ['Beef noodle soup'],
+        say: { zh: '', meaning: '', to: 'restaurant' as const },
       };
     },
 

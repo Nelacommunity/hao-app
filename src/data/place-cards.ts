@@ -1,6 +1,6 @@
 // What the Places chat and search return: Hao's text plus cards ({ text, cards: [{ type, data }] }).
 // Shared by the API routes and the app; types only.
-import type { ScanItem, ScanResult, ToolUse } from '@shared/ai/types';
+import type { ScanItem, ScanResult, StaffLine, ToolUse } from '@shared/ai/types';
 import type { Reason } from '@shared/places/ranking';
 
 import type { Place } from '@/data/places';
@@ -59,12 +59,14 @@ export type ChatCard =
   | { type: 'visited'; data: VisitCardData }
   | { type: 'day_plan'; data: MapListData }
   | { type: 'journal'; data: MapListData }
-  | { type: 'menu'; data: MenuCardData };
+  | { type: 'menu'; data: MenuCardData }
+  /** Something to show or play to a waiter or shopkeeper ("I want this"). */
+  | { type: 'say'; data: StaffLine };
 
 /** The places a card shows, so "save the second one" can refer to them. */
 export function cardPlaces(card: ChatCard): Place[] {
   if (card.type === 'day_plan' || card.type === 'journal') return card.data.stops.map((s) => s.place);
-  if (card.type === 'menu') return [];
+  if (card.type === 'menu' || card.type === 'say') return [];
   return [card.data.place];
 }
 
@@ -75,4 +77,8 @@ export type PlacesChatResponse = {
   tools: ToolUse[];
   /** The search needed the user's location and the app didn't send one. */
   needs_location?: boolean;
+  /** A scanned QR menu can't be read from here (it opens inside WeChat, Alipay…): ask for a screenshot. */
+  needs_photo?: boolean;
+  /** The link a scanned QR code holds, to open in the browser. */
+  link?: string;
 };

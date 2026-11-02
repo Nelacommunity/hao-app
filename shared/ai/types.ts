@@ -107,7 +107,9 @@ export type ToolUse =
   | { tool: 'community_picks'; count: number; nationality: string }
   | { tool: 'plan_day'; stops: number }
   | { tool: 'trip_journal'; count: number }
-  | { tool: 'read_photo'; kind: 'menu' | 'sign' | 'other'; count: number; flagged: number };
+  | { tool: 'read_photo'; kind: ScanKind; count: number; flagged: number }
+  | { tool: 'read_qr'; found: 'menu' | 'text' | 'app' | 'unreadable'; count: number }
+  | { tool: 'tell_staff'; to: StaffLine['to'] };
 
 /** The text of a place a traveller reads; the Chinese original stays alongside it in the app. */
 export type PlaceText = { name: string; address: string; type: string; tags: string[] };
@@ -211,7 +213,20 @@ export type GuideTurn = {
 };
 
 // ─── Places chat: recommendations and the places the user has been ─────────
-export type PlacesTool = 'search_places' | 'community_picks' | 'plan_day' | 'trip_journal' | 'log_visit' | 'get_my_places' | 'save_place' | 'none';
+export type PlacesTool = 'search_places' | 'community_picks' | 'plan_day' | 'trip_journal' | 'tell_staff' | 'log_visit' | 'get_my_places' | 'save_place' | 'none';
+
+/**
+ * What Hao says for the traveller to a waiter, shopkeeper or anyone else: shown big on screen and read aloud
+ * in Mandarin ("I want this").
+ */
+export type StaffLine = {
+  /** Simplified Chinese, as the traveller would say it. */
+  zh: string;
+  /** The same in the traveller's language, so they know what they are showing. */
+  meaning: string;
+  /** Who it is for, for the card's title. */
+  to: 'restaurant' | 'shop' | 'anyone';
+};
 export type PlacesCategory = 'food' | 'attraction' | 'shop' | 'service' | 'hotel';
 export type PlacesFilter = 'halal' | 'vegetarian' | 'cheap' | 'spicy' | 'not_spicy' | 'good_for_groups';
 
@@ -251,6 +266,8 @@ export type PlacesPlan = {
   scope: 'nearby' | 'city' | 'anywhere' | '';
   /** trip_journal: how many days back to look (1–90); 0 means the default (30). */
   days: number;
+  /** tell_staff: the line for the waiter or shopkeeper; empty zh for other tools. */
+  say: StaffLine;
   /** Important things the user said about themselves this turn, saved to their Hao DNA. */
   dna: TwinUpdates;
   /** The final reply when tool is none, log_visit or save_place; ignored for searches. */
@@ -275,7 +292,9 @@ export type PlacesReply = { reply: string; quick_replies: string[] };
 export type ImageInput = { data: string; mimeType: string };
 
 export type ScanInput = {
-  image: ImageInput;
+  /** A photo, or `page`: the text of a web page a QR code opened (a menu). One of the two. */
+  image?: ImageInput;
+  page?: string;
   language: LanguageTarget;
   /** What the traveller asked with the photo, if anything ("is this halal?"). */
   text: string;
@@ -299,7 +318,7 @@ export type ScanItem = {
 };
 
 export type ScanResult = {
-  kind: 'menu' | 'sign' | 'other';
+  kind: ScanKind;
   /** A short title in the traveller's language ("Noodle shop menu", "Metro exit sign"). */
   title: string;
   /** Menus: a one-line overview. Signs and other text: the full translation. */
@@ -308,7 +327,12 @@ export type ScanResult = {
   items: ScanItem[];
   /** Menus: up to 3 dishes that fit the traveller best, as written in items[].name. */
   picks: string[];
+  /** A line for the shopkeeper or waiter: always for a product, and when the traveller asked to tell someone. Empty zh otherwise. */
+  say: StaffLine;
 };
+
+/** menu, sign (signs, notices, labels, tickets), product (something to buy) or other. */
+export type ScanKind = 'menu' | 'sign' | 'product' | 'other';
 
 // ─── Digital twin ("Hao DNA"): what Hao knows about the user, built by chatting ───
 export type TravellerType = 'student' | 'tourist';

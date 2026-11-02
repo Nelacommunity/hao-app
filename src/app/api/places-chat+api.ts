@@ -1,12 +1,14 @@
 // The Places chat: Hao picks one tool per message (search_places, community_picks, plan_day, trip_journal,
 // log_visit, get_my_places, save_place), the server runs it, and Hao answers only from what the tool returned.
-// Replies are { text, cards }. A photo (menu or sign) skips the tools: Hao reads it and flags dishes that clash
-// with the traveller's diet.
+// Replies are { text, cards }. A photo (menu, sign or something in a shop) skips the tools: Hao reads it, flags
+// dishes that clash with the traveller's diet, and writes what to say to the shopkeeper. A scanned table QR code
+// is read the same way when it opens a plain web menu (lib/server/qr-page). tell_staff writes "I want this" for
+// the waiter or shopkeeper, shown big and played aloud.
 // Every turn also saves what the user said about themselves ("I love this", "I want to…") to their Hao DNA,
 // and the DNA steers vague searches ("somewhere I'd love", "food like home").
 import { describePreferences } from '@shared/ai/preferences';
 import { twinDna } from '@shared/ai/twin';
-import type { ShownPlace } from '@shared/ai/types';
+import type { ScanResult, ShownPlace, ToolUse } from '@shared/ai/types';
 import { Countries } from '@shared/places/countries';
 import { HIGH_RATING } from '@shared/places/config';
 import { conflictOf } from '@shared/places/ranking';
@@ -20,6 +22,7 @@ import { memoryContext, remember, toolUses, userClient } from '@/lib/server/memo
 import { localizePlaces, placeLanguage } from '@/lib/server/place-i18n';
 import { loadPlaceProfile, upsertPlaces } from '@/lib/server/places-db';
 import { allow, tooMany } from '@/lib/server/rate-limit';
+import { readQr } from '@/lib/server/qr-page';
 import { parseLocation, reasonText, searchPlaces } from '@/lib/server/search-places';
 import { captureDna, communityPicks, loadTwin } from '@/lib/server/twin';
 import { createVisit, placeByAmapId, placeByName } from '@/lib/server/visits';
@@ -34,6 +37,8 @@ type Body = {
   city?: string | null;
   /** A photo of a menu or sign, base64 (menu and sign scanner). */
   image?: { data?: unknown; mimeType?: unknown };
+  /** What a scanned QR code holds (a table's ordering menu, usually a link). */
+  qr?: unknown;
 };
 
 const MAX_IMAGE_BASE64 = 6 * 1024 * 1024;
@@ -64,11 +69,12 @@ export async function POST(request: Request) {
       ? { data: body.image.data, mimeType: String(body.image.mimeType) }
       : null;
   if (body.image && !image) return Response.json({ error: 'Send a JPEG or PNG photo under 4 MB.' }, { status: 400 });
-  if (!text && !image) return Response.json({ error: 'Send a message' }, { status: 400 });
+  const qr = typeof body.qr === 'string' && body.qr.trim() ? body.qr.trim().slice(0, 2000) : null;
+  if (!text && !image && !qr) return Response.json({ error: 'Send a message' }, { status: 400 });
 
   const language = { code: String(body.language?.code ?? 'en').slice(0, 32), name: String(body.language?.name ?? 'English').slice(0, 64) };
   const placeLang = placeLanguage(language.code, language.name);
-  const history = (body.history ?? []).slice(-10).map((m) => ({ role: m.role === 'hao' ? ('hao' as const) : ('user' as const), text: String(m.text).slice(0, 1500) }));
+  const history = (body.history ?? []).slice(-10).map((m) => ({ role: m.role === 'hao' ? ('hao' as const) : ('user' as const), text: String(m.text).slice(0, 2500) }));
   const shown = (body.shown ?? [])
     .filter((p) => p && Number.isInteger(p.ref) && isPlaceId(String(p.id)))
     .slice(-20)
@@ -86,21 +92,59 @@ export async function POST(request: Request) {
     .join('\n');
 
   try {
-    if (image) {
+    /** A menu, sign or product Hao read, as cards: the menu (diet clashes flagged) and what to tell the staff. */
+    const scanned = (scan: ScanResult, tool: ToolUse, extra: Partial<PlacesChatResponse> = {}): PlacesChatResponse => {
       const prefs = profile.preferences;
-      const scan = await provider.readImage({ image, language, text, about: [about, describePreferences(prefs)].filter(Boolean).join('\n') });
       // The model warns about clashes; the same diet and allergy check as place ranking catches what it misses.
       const items = scan.items.map((item): MenuItem => {
         const clash = prefs ? conflictOf({ id: item.zh, name: item.name, nameZh: item.zh, kind: 'food', typeZh: '', tags: item.contains }, prefs) : null;
         return clash ? { ...item, clash } : item;
       });
       const flagged = items.filter((it) => it.warning || it.clash).length;
-      return Response.json({
-        text: scan.summary,
-        cards: [{ type: 'menu', data: { ...scan, items } }],
-        quick_replies: [],
-        tools: [{ tool: 'read_photo', kind: scan.kind, count: items.length, flagged }],
-      } satisfies PlacesChatResponse);
+      const cards: ChatCard[] = [{ type: 'menu', data: { ...scan, items } }];
+      if (scan.say.zh) cards.push({ type: 'say', data: scan.say });
+      const tools: ToolUse[] = [tool.tool === 'read_photo' ? { ...tool, count: items.length, flagged } : tool];
+      if (scan.say.zh) tools.push({ tool: 'tell_staff', to: scan.say.to });
+      return { text: scan.summary, cards, quick_replies: [], tools, ...extra };
+    };
+    const scanAbout = [about, describePreferences(profile.preferences)].filter(Boolean).join('\n');
+
+    if (image) {
+      const scan = await provider.readImage({ image, language, text, about: scanAbout });
+      return Response.json(scanned(scan, { tool: 'read_photo', kind: scan.kind, count: 0, flagged: 0 }));
+    }
+
+    if (qr) {
+      const found = await readQr(qr);
+      if (found.kind === 'app' || found.kind === 'unreadable') {
+        const where = found.kind === 'app' ? found.app : '';
+        return Response.json({
+          text: where
+            ? `This QR code opens the menu inside ${where}, so I can’t read it from here. Scan it with ${where === 'an app' ? 'that app' : where}, take a screenshot of the menu, and send me the screenshot: I’ll translate every dish and you can order from it.`
+            : 'I couldn’t open the menu behind this QR code. Open it on your phone, take a screenshot of the menu, and send me the screenshot: I’ll translate it and you can order from it.',
+          cards: [],
+          quick_replies: [],
+          tools: [{ tool: 'read_qr', found: found.kind, count: 0 }],
+          needs_photo: true,
+          link: found.url || undefined,
+        } satisfies PlacesChatResponse);
+      }
+      const scan = await provider.readImage({ page: found.text, language, text, about: scanAbout });
+      const link = found.kind === 'page' ? found.url : undefined;
+      if (found.kind === 'page' && scan.kind === 'menu' && !scan.items.length) {
+        // The page loaded but its menu didn't (drawn later by JavaScript): a screenshot will work.
+        return Response.json({
+          text: 'The page behind this QR code doesn’t show its menu to me. Open it, take a screenshot of the menu, and send me the screenshot.',
+          cards: [],
+          quick_replies: [],
+          tools: [{ tool: 'read_qr', found: 'unreadable', count: 0 }],
+          needs_photo: true,
+          link,
+        } satisfies PlacesChatResponse);
+      }
+      return Response.json(
+        scanned(scan, { tool: 'read_qr', found: scan.kind === 'menu' ? 'menu' : 'text', count: scan.items.length }, { link })
+      );
     }
 
     const plan = await provider.placesPlan({
@@ -251,6 +295,14 @@ export async function POST(request: Request) {
         );
         const out = await reply(`The traveller's trip over the last ${days} days, in order:\n${lines.join('\n')}`);
         response = { text: out.reply, cards: [{ type: 'journal', data: journal }], quick_replies: out.quick_replies, tools };
+        break;
+      }
+
+      case 'tell_staff': {
+        tools.push({ tool: 'tell_staff', to: plan.say.to });
+        response = plan.say.zh
+          ? { text: plan.reply || 'Show them this, or tap play to say it.', cards: [{ type: 'say', data: plan.say }], quick_replies: plan.quick_replies, tools }
+          : { text: plan.reply || 'What should I tell them? Name the dish or thing you want.', cards: [], quick_replies: plan.quick_replies, tools };
         break;
       }
 

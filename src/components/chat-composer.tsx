@@ -27,8 +27,10 @@ type Props = {
   onOpenMenu: () => void;
   /** Shows a "Discover" chip that opens today's stories. */
   onOpenDiscover?: () => void;
-  /** Shows a camera button: photograph a menu or sign for Hao to read (Places). */
+  /** Shows a camera button: photograph a menu, sign or something to buy for Hao to read (Places). */
   onScan?: () => void;
+  /** Shows a QR button: scan a restaurant table's menu code (Places). */
+  onScanQr?: () => void;
   busy: boolean;
   /** Voice input; omit to hide the mic (e.g. Guide mode). */
   voice?: {
@@ -43,7 +45,7 @@ type Props = {
   };
 };
 
-export function ChatComposer({ mode, value, onChangeText, onSend, onOpenMenu, onOpenDiscover, onScan, busy, voice }: Props) {
+export function ChatComposer({ mode, value, onChangeText, onSend, onOpenMenu, onOpenDiscover, onScan, onScanQr, busy, voice }: Props) {
   const t = useT();
   const hasText = value.trim().length > 0;
 
@@ -92,13 +94,24 @@ export function ChatComposer({ mode, value, onChangeText, onSend, onOpenMenu, on
             </Pressable>
           ) : null}
           <View style={{ flex: 1 }} />
-          {onScan && !hasText ? (
+          {onScanQr ? (
+            <Pressable
+              onPress={onScanQr}
+              disabled={busy}
+              style={({ pressed }) => [styles.plus, pressed && styles.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel={t('Scan a menu QR code')}>
+              <Ionicons name="qr-code-outline" size={21} color={ChatColors.text} />
+            </Pressable>
+          ) : null}
+          {/* Stays while typing: what they typed goes with the photo ("tell the shopkeeper I want two"). */}
+          {onScan ? (
             <Pressable
               onPress={onScan}
               disabled={busy}
               style={({ pressed }) => [styles.plus, pressed && styles.pressed]}
               accessibilityRole="button"
-              accessibilityLabel={t('Scan a menu or sign')}>
+              accessibilityLabel={t('Photo of a menu, sign or something to buy')}>
               <Ionicons name="camera-outline" size={22} color={ChatColors.text} />
             </Pressable>
           ) : null}

@@ -192,6 +192,8 @@ const TOOL_ICONS: Record<ToolUse['tool'], keyof typeof Ionicons.glyphMap> = {
   plan_day: 'map-outline',
   trip_journal: 'journal-outline',
   read_photo: 'scan-outline',
+  read_qr: 'qr-code-outline',
+  tell_staff: 'megaphone-outline',
 };
 
 function toolLine(t: ReturnType<typeof useT>, tool: ToolUse): { title: string; details: string[] } {
@@ -231,9 +233,16 @@ function toolLine(t: ReturnType<typeof useT>, tool: ToolUse): { title: string; d
       return { title: t('Wrote your trip journal · {count} places', { count: tool.count }), details: [] };
     case 'read_photo':
       return {
-        title: tool.kind === 'menu' ? t('Read the menu · {count} dishes', { count: tool.count }) : t('Read the photo'),
+        title: tool.kind === 'menu' ? t('Read the menu · {count} dishes', { count: tool.count }) : tool.kind === 'product' ? t('Looked at the item') : t('Read the photo'),
         details: tool.flagged ? [t('{count} may not suit your diet', { count: tool.flagged })] : [],
       };
+    case 'read_qr':
+      return {
+        title: tool.found === 'menu' ? t('Read the QR menu · {count} dishes', { count: tool.count }) : tool.found === 'text' ? t('Read the QR code') : t('Scanned the QR code'),
+        details: tool.found === 'app' ? [t('The menu opens inside another app')] : tool.found === 'unreadable' ? [t('Couldn’t open the menu')] : [],
+      };
+    case 'tell_staff':
+      return { title: tool.to === 'restaurant' ? t('Wrote your order in Chinese') : tool.to === 'shop' ? t('Wrote what to tell the shopkeeper') : t('Wrote it in Chinese'), details: [] };
   }
 }
 

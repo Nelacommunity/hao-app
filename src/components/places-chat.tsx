@@ -5,6 +5,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -15,6 +16,8 @@ import { AssistantMessage, ChatColors, ChatError, HaoMark, QuickReplies, Thinkin
 import { MapListCard } from '@/components/map-list-card';
 import { MenuCard } from '@/components/menu-card';
 import { CardCarousel, PlaceCard, VisitedCard } from '@/components/place-card';
+import { QrScanSheet } from '@/components/qr-scan-sheet';
+import { SayCard } from '@/components/say-card';
 import { VisitConfirmCard } from '@/components/visit-confirm-card';
 import { Colors, pick, Radius, Spacing, themed } from '@/constants/theme';
 import type { ChatCard, VisitCardData } from '@/data/place-cards';
@@ -39,7 +42,10 @@ type Props = {
   onBusyChange: (busy: boolean) => void;
 };
 
-export type PlacesChatHandle = { send: (text: string) => void; scan: () => void };
+/** scan and scanQr send `text` with the photo or code ("tell the shopkeeper I want two"); true when something was sent. */
+export type PlacesChatHandle = { send: (text: string) => void; scan: (text?: string) => Promise<boolean>; scanQr: (text?: string, onSent?: () => void) => void };
+
+type Photo = { data: string; mimeType: string };
 
 type Starter = { icon: IconName; color: string; title: string; subtitle: string; prompt: string; tint: 'orangeSoft' | 'redSoft' | 'goldSoft' | 'blueSoft' | 'jadeSoft' };
 
@@ -73,6 +79,9 @@ export const PlacesChat = forwardRef<PlacesChatHandle, Props>(function PlacesCha
   const [fresh, setFresh] = useState<PlacesMessage | null>(null);
   const [questions, setQuestions] = useState<VisitCardData[]>([]);
   const scrollRef = useRef<ScrollViewInstance>(null);
+  // The QR scanner is open; its value is the text to send with the code.
+  const [qrFor, setQrFor] = useState<string | null>(null);
+  const qrSent = useRef<(() => void) | undefined>(undefined);
 
   const here = location.coords;
   const nearest = here ? [...Cities].sort((a, b) => distanceKm(here, a) - distanceKm(here, b))[0] : null;
@@ -105,17 +114,19 @@ export const PlacesChat = forwardRef<PlacesChatHandle, Props>(function PlacesCha
     scrollRef.current?.scrollToEnd({ animated: true });
   }, [messages.length, busy, questions.length]);
 
-  const send = async (raw: string, coords = here, image?: { data: string; mimeType: string }) => {
+  const send = async (raw: string, coords = here, attach: { image?: Photo; qr?: string } = {}) => {
     const text = raw.trim();
-    if ((!text && !image) || busy) return;
+    const { image, qr } = attach;
+    if ((!text && !image && !qr) || busy) return;
     setBusy(true);
     onBusyChange(true);
     setError(null);
     setFailedText(null);
     const before = messages;
-    setMessages((m) => [...m, { role: 'user', text: text || t('Read this for me'), photo: !!image }]);
+    const shown = text || (qr ? t('Read this QR code for me') : t('Read this for me'));
+    setMessages((m) => [...m, { role: 'user', text: shown, photo: !!image, qr: !!qr }]);
     try {
-      const result = await askPlaces({ language: { code: language.code, name: language.name }, text, messages: before, location: coords, city, image });
+      const result = await askPlaces({ language: { code: language.code, name: language.name }, text, messages: before, location: coords, city, image, qr });
       // Something was saved to the Hao DNA: show it in Me straight away.
       if (result.tools?.some((tool) => tool.tool === 'dna')) refreshProfile().catch(() => {});
       const reply: PlacesMessage = {
@@ -125,13 +136,15 @@ export const PlacesChat = forwardRef<PlacesChatHandle, Props>(function PlacesCha
         quickReplies: result.quick_replies,
         tools: result.tools,
         needsLocation: result.needs_location,
+        needsPhoto: result.needs_photo,
+        link: result.link,
       };
       setFresh(reply);
       setMessages((m) => [...m, reply]);
     } catch (e) {
       setError(e instanceof Error ? e.message : t('Something went wrong'));
       // A photo isn't kept, so it can't be retried with one tap.
-      setFailedText(image ? null : text);
+      setFailedText(image || qr ? null : text);
       setMessages(before);
     } finally {
       setBusy(false);
@@ -139,19 +152,29 @@ export const PlacesChat = forwardRef<PlacesChatHandle, Props>(function PlacesCha
     }
   };
 
-  /** Menu and sign scanner: take a photo (or pick one) and let Hao read it. */
-  const scan = async () => {
-    if (busy) return;
+  /**
+   * Menu, sign and product scanner: take a photo (or pick one, e.g. a screenshot of a QR menu) and let Hao read it.
+   * `text` goes with it: "is this halal?", "tell the shopkeeper I want two of these".
+   */
+  const scan = async (text = '', from: 'camera' | 'library' = 'camera') => {
+    if (busy) return false;
     const options: ImagePicker.ImagePickerOptions = { mediaTypes: 'images', quality: 0.4, base64: true };
     // On a phone the camera first (a menu is in front of you); the library when the camera isn't allowed or there's none.
-    const camera = await ImagePicker.requestCameraPermissionsAsync().catch(() => null);
+    const camera = from === 'camera' ? await ImagePicker.requestCameraPermissionsAsync().catch(() => null) : null;
     const result = camera?.granted ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options);
     const asset = result.canceled ? null : result.assets[0];
-    if (!asset?.base64) return;
-    send('', here, { data: asset.base64, mimeType: asset.mimeType === 'image/png' ? 'image/png' : 'image/jpeg' });
+    if (!asset?.base64) return false;
+    send(text, here, { image: { data: asset.base64, mimeType: asset.mimeType === 'image/png' ? 'image/png' : 'image/jpeg' } });
+    return true;
   };
 
-  useImperativeHandle(ref, () => ({ send: (text: string) => send(text), scan }));
+  const scanQr = (text = '', onSent?: () => void) => {
+    if (busy) return;
+    qrSent.current = onSent;
+    setQrFor(text);
+  };
+
+  useImperativeHandle(ref, () => ({ send: (text: string) => send(text), scan: (text?: string) => scan(text), scanQr }));
 
   /** After the user shares their location, ask the same thing again. */
   const shareLocationAndRetry = async (index: number) => {
@@ -222,7 +245,9 @@ export const PlacesChat = forwardRef<PlacesChatHandle, Props>(function PlacesCha
             <MemoryPill icon="bookmark" label={t('My Places')} onPress={() => router.navigate('/my-places')} />
             <MemoryPill icon="bed" label={t('My Hotels')} onPress={() => router.navigate({ pathname: '/my-places', params: { filter: 'hotels' } })} />
             <MemoryPill icon="journal-outline" label={t('Trip journal')} onPress={() => send(t('Make my trip journal for this month'))} />
-            <MemoryPill icon="scan-outline" label={t('Scan a menu')} onPress={scan} />
+            <MemoryPill icon="scan-outline" label={t('Scan a menu')} onPress={() => scan()} />
+            <MemoryPill icon="qr-code-outline" label={t('Scan a table QR')} onPress={() => scanQr()} />
+            <MemoryPill icon="pricetag-outline" label={t('I want this (photo)')} onPress={() => scan(t('Tell the shopkeeper I want this'))} />
           </View>
 
           <CommunityNudge nationality={profile?.nationality ?? null} sharing={!!profile?.share_visits} />
@@ -231,7 +256,7 @@ export const PlacesChat = forwardRef<PlacesChatHandle, Props>(function PlacesCha
 
       {messages.map((m, i) =>
         m.role === 'user' ? (
-          <UserMessage key={i} text={m.photo ? `📷 ${m.text}` : m.text} />
+          <UserMessage key={i} text={m.photo ? `📷 ${m.text}` : m.qr ? `🔳 ${m.text}` : m.text} />
         ) : (
           <AssistantMessage key={i} text={m.text} animate={m === fresh} speech={language.speech} tools={m.tools}>
             {m.cards?.length ? <Cards cards={m.cards} onVisitChange={(v) => updateVisitCard(i, v)} /> : null}
@@ -240,6 +265,25 @@ export const PlacesChat = forwardRef<PlacesChatHandle, Props>(function PlacesCha
                 <Ionicons name="location" size={16} color="#fff" />
                 <Text style={styles.shareLocationText}>{t('Share my location')}</Text>
               </Pressable>
+            ) : null}
+            {m.needsPhoto || m.link ? (
+              <View style={styles.qrActions}>
+                {m.needsPhoto ? (
+                  <Pressable onPress={() => scan('', 'library')} style={({ pressed }) => [styles.shareLocation, pressed && styles.pressed]} accessibilityRole="button">
+                    <Ionicons name="images" size={16} color="#fff" />
+                    <Text style={styles.shareLocationText}>{t('Send a screenshot')}</Text>
+                  </Pressable>
+                ) : null}
+                {m.link ? (
+                  <Pressable
+                    onPress={() => WebBrowser.openBrowserAsync(m.link!).catch(() => {})}
+                    style={({ pressed }) => [styles.linkButton, pressed && styles.pressed]}
+                    accessibilityRole="link">
+                    <Ionicons name="open-outline" size={16} color={ChatColors.text} />
+                    <Text style={styles.linkText}>{t('Open the link')}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             ) : null}
             {m === lastHao && m.quickReplies?.length ? <QuickReplies replies={m.quickReplies} onPress={(q) => send(q)} /> : null}
           </AssistantMessage>
@@ -258,8 +302,29 @@ export const PlacesChat = forwardRef<PlacesChatHandle, Props>(function PlacesCha
         </View>
       ) : null}
 
-      {busy ? <Thinking label={messages[messages.length - 1]?.photo ? t('Reading your photo…') : t('Finding places for you…')} /> : null}
+      {busy ? (
+        <Thinking
+          label={messages[messages.length - 1]?.photo ? t('Reading your photo…') : messages[messages.length - 1]?.qr ? t('Opening the menu…') : t('Finding places for you…')}
+        />
+      ) : null}
       {error ? <ChatError message={error} onRetry={failedText ? () => send(failedText) : undefined} /> : null}
+
+      <QrScanSheet
+        visible={qrFor !== null}
+        onClose={() => setQrFor(null)}
+        onScanned={(code) => {
+          const text = qrFor ?? '';
+          setQrFor(null);
+          qrSent.current?.();
+          send(text, here, { qr: code });
+        }}
+        onPickPhoto={() => {
+          const text = qrFor ?? '';
+          setQrFor(null);
+          const sent = qrSent.current;
+          scan(text, 'library').then((ok) => ok && sent?.());
+        }}
+      />
     </ScrollView>
   );
 });
@@ -274,6 +339,8 @@ function Cards({ cards, onVisitChange }: { cards: ChatCard[]; onVisitChange: (vi
           <MapListCard key={i} data={c.data} kind={c.type} />
         ) : c.type === 'menu' ? (
           <MenuCard key={i} data={c.data} />
+        ) : c.type === 'say' ? (
+          <SayCard key={i} data={c.data} />
         ) : null
       )}
       {visits.map((c) => (
@@ -400,6 +467,19 @@ const styles = themed(() => StyleSheet.create({
     backgroundColor: Colors.jade,
   },
   shareLocationText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  qrActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  linkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    height: 38,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: ChatColors.border,
+    backgroundColor: ChatColors.surface,
+  },
+  linkText: { fontSize: 14, fontWeight: '600', color: ChatColors.text },
   questions: { gap: 12 },
   questionsHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   questionsTitle: { fontSize: 14, fontWeight: '600', color: ChatColors.soft },

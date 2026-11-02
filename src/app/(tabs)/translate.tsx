@@ -386,7 +386,20 @@ export default function AgentScreen() {
           onSend={send}
           onOpenMenu={() => setMenuOpen(true)}
           onOpenDiscover={() => router.navigate('/discover')}
-          onScan={mode === 'places' ? () => placesRef.current?.scan() : undefined}
+          onScan={
+            mode === 'places'
+              ? () =>
+                  placesRef.current
+                    ?.scan(draft)
+                    .then((sent) => sent && setDraft(''))
+                    .catch(() => {})
+              : undefined
+          }
+          onScanQr={
+            mode === 'places'
+              ? () => placesRef.current?.scanQr(draft, () => setDraft(''))
+              : undefined
+          }
           busy={{ places: placesBusy, interpret: busy, guide: guideBusy, memory: memoryBusy }[mode]}
           voice={
             mode === 'interpret'
