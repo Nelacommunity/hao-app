@@ -129,7 +129,10 @@ export async function POST(request: Request) {
           link: found.url || undefined,
         } satisfies PlacesChatResponse);
       }
-      const scan = await provider.readImage({ page: found.text, language, text, about: scanAbout });
+      const read = () => provider.readImage({ page: found.text, language, text, about: scanAbout });
+      let scan = await read();
+      // Now and then the model calls a page a menu but lists no dishes: one more try before giving up on it.
+      if (scan.kind === 'menu' && !scan.items.length) scan = await read();
       const link = found.kind === 'page' ? found.url : undefined;
       if (found.kind === 'page' && scan.kind === 'menu' && !scan.items.length) {
         // The page loaded but its menu didn't (drawn later by JavaScript): a screenshot will work.
