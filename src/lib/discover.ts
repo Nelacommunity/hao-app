@@ -1,4 +1,4 @@
-// Discover beyond the generated stories: real AMap places and a phrase of the day mixed into the feed, likes
+// Discover beyond the generated stories: real places (shown on a Mapbox map) and a phrase of the day mixed into the feed, likes
 // everyone can see, sharing, and Hao's voice guide that explains any item aloud.
 import * as Speech from 'expo-speech';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -32,8 +32,8 @@ export function phraseOfTheDay(day: string): DiscoverItem {
 }
 
 /**
- * Cultural places and landmarks with real AMap photos: around the user when we know where they are,
- * otherwise in the feed's city. Best rated first, at most `limit`.
+ * Cultural places and landmarks: around the user when we know where they are, otherwise in the feed's city.
+ * Best rated first, at most `limit`. Their cards show the place on a Mapbox map, so no photo is needed.
  */
 export async function culturePlaces(o: { near: Coords | null; city: string | null; limit?: number }): Promise<DiscoverItem[]> {
   const cityZh = Cities.find((c) => c.name.toLowerCase() === (o.city ?? '').toLowerCase())?.nameZh ?? Cities[0].nameZh;
@@ -42,7 +42,7 @@ export async function culturePlaces(o: { near: Coords | null; city: string | nul
   const [culture, landmarks] = await Promise.all([query('culture'), query('landmark')]);
   const seen = new Set<string>();
   return [...culture, ...landmarks]
-    .filter((p) => p.photos.length > 0 && !seen.has(p.id) && seen.add(p.id))
+    .filter((p) => !seen.has(p.id) && seen.add(p.id))
     .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
     .slice(0, o.limit ?? 8)
     .map((place) => ({ kind: 'place' as const, id: `place:${place.id}`, place }));

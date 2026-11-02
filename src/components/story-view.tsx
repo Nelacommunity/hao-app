@@ -8,11 +8,13 @@ import { PLACE_TYPES, type Quiz, type Slide, type StoryAction, type StoryType } 
 
 import { CardPhoto } from '@/components/card-photo';
 import { RAIL_WIDTH } from '@/components/discover-rail';
-import { Radius, Spacing, themed } from '@/constants/theme';
+import { getThemeMode, Radius, Spacing, themed } from '@/constants/theme';
 import type { IconName } from '@/data/places';
 import { tx, useT } from '@/lib/i18n';
 import { getTravellerLanguage } from '@/lib/language-store';
 import { Languages } from '@/lib/languages';
+import { staticMapUrl } from '@/lib/static-map';
+import { placeOf } from '@/lib/story-actions';
 import type { Story } from '@/lib/stories';
 
 export const StoryTypeMeta: Record<StoryType, { label: string; color: string; icon: IconName }> = {
@@ -129,8 +131,14 @@ export function StoryView({ story, height, topInset, active, narrate = false, on
   const slide = page.slide;
   const last = index === pages.length - 1;
   const quiz = page.kind === 'quiz' ? page.quiz : null;
-  // "Real photos from Amap" only on place stories; other photos (e.g. Wikimedia Commons) carry their own credit.
-  const amapPhotos = PLACE_TYPES.includes(story.type) && story.slides.some((s) => s.image_kind === 'real_photo' && s.image_url);
+  // Place stories show the place on a Mapbox map (street, then neighbourhood, then city) instead of AMap's photos.
+  // Other photos (e.g. Wikimedia Commons) carry their own credit.
+  const storyPlace = PLACE_TYPES.includes(story.type) ? placeOf(story.action) : null;
+  const slideIndex = Math.max(0, story.slides.indexOf(slide));
+  const placeMap = storyPlace
+    ? staticMapUrl(storyPlace, { width, height, zoom: [16, 14, 12, 11][slideIndex] ?? 13, dark: getThemeMode() === 'dark', color: meta.color })
+    : null;
+  const slideImage = placeMap ?? (storyPlace ? null : slide.image_url);
   const illustrated = slide.image_kind === 'ai_illustration' && !!slide.image_url;
   // A painting: whole on the first slide, then zoomed into and moved across.
   const slideNumber = story.slides.indexOf(slide);
@@ -241,8 +249,8 @@ export function StoryView({ story, height, topInset, active, narrate = false, on
           accessible={false}
           importantForAccessibility="no"
           style={StyleSheet.absoluteFill}>
-          {slide.image_url ? (
-            <CardPhoto uri={slide.image_url} pan={pan} />
+          {slideImage ? (
+            <CardPhoto uri={slideImage} pan={pan} />
           ) : (
             <View style={styles.iconBackdrop} pointerEvents="none">
               <Ionicons name={meta.icon} size={Math.min(220, width * 0.55)} color="rgba(255,255,255,0.16)" />
@@ -269,11 +277,11 @@ export function StoryView({ story, height, topInset, active, narrate = false, on
                 {t('Made by Hao AI')}
               </Text>
             </View>
-            {amapPhotos ? (
+            {placeMap ? (
               <View style={styles.chip}>
-                <Ionicons name="camera" size={13} color="#fff" />
+                <Ionicons name="map" size={13} color="#fff" />
                 <Text style={styles.chipText} maxFontSizeMultiplier={1.4}>
-                  {t('Real photos from Amap')}
+                  {t('Map © Mapbox')}
                 </Text>
               </View>
             ) : illustrated ? (

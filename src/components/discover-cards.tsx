@@ -1,14 +1,15 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Speech from 'expo-speech';
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions, type GestureResponderEvent } from 'react-native';
 
 import { CardPhoto } from '@/components/card-photo';
 import { RAIL_WIDTH } from '@/components/discover-rail';
-import { Colors, Radius, Spacing, themed } from '@/constants/theme';
+import { Colors, getThemeMode, Radius, Spacing, themed } from '@/constants/theme';
 import { CategoryMeta, type Place } from '@/data/places';
 import type { Phrase } from '@/data/phrases';
 import { useT } from '@/lib/i18n';
+import { staticMapUrl } from '@/lib/static-map';
 
 type Common = {
   height: number;
@@ -18,7 +19,7 @@ type Common = {
   rail: ReactNode;
 };
 
-/** A real place from AMap, full screen: its photos (tap through), what it is, and the way there. */
+/** A real place, full screen: where it is on a Mapbox map (tap to zoom out), what it is, and the way there. */
 export function PlaceCard({ place, height, topInset, active, rail, onDirections, onAsk, onDetails }: Common & {
   place: Place;
   onDirections: () => void;
@@ -27,7 +28,14 @@ export function PlaceCard({ place, height, topInset, active, rail, onDirections,
 }) {
   const t = useT();
   const { width } = useWindowDimensions();
-  const photos = place.photos.slice(0, 5);
+  // The street, the neighbourhood, then the city.
+  const photos = useMemo(
+    () =>
+      [16, 14, 12]
+        .map((zoom) => staticMapUrl(place, { width, height, zoom, dark: getThemeMode() === 'dark', color: CategoryMeta[place.category].color }))
+        .filter((u): u is string => !!u),
+    [place, width, height]
+  );
   const [index, setIndex] = useState(0);
   const [wasActive, setWasActive] = useState(active);
   if (active !== wasActive) {
@@ -62,8 +70,8 @@ export function PlaceCard({ place, height, topInset, active, rail, onDirections,
             <Text style={styles.chipText}>{t(meta.short)}</Text>
           </View>
           <View style={styles.chip}>
-            <Ionicons name="camera" size={13} color="#fff" />
-            <Text style={styles.chipText}>{t('Real photos from Amap')}</Text>
+            <Ionicons name="map" size={13} color="#fff" />
+            <Text style={styles.chipText}>{t('Map © Mapbox')}</Text>
           </View>
         </View>
       </View>
