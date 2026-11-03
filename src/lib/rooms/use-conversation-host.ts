@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { AudioInput, LanguageTarget, RoomSpeaker, RoomTurnLine } from '@shared/ai/types';
+import type { AudioInput, ContactKind, LanguageTarget, RoomSpeaker, RoomTurnLine } from '@shared/ai/types';
 import type { ConvCaption, PhaseState, RoomAlert, RoomContext, RoomSummary, ServerMessage } from '@shared/rooms/protocol';
-import type { GuestEnvelope } from '@shared/rooms/realtime';
+import { cleanName, type GuestEnvelope } from '@shared/rooms/realtime';
 
 import { roomApi, type RoomApi } from '@/lib/rooms/api';
 import { useHostChannel } from '@/lib/rooms/channel';
@@ -23,6 +23,8 @@ const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(
 type Options = {
   code: string | null;
   userLanguage: LanguageTarget & { speech: string };
+  /** The host's name, shown on the guest's page. */
+  userName?: string;
   initialContext: RoomContext | null;
   api?: RoomApi;
 };
@@ -33,7 +35,7 @@ type Options = {
  * its first line is written. The guest (web page) is reached over
  * Supabase Realtime; alerts, whispers and the summary never leave this phone.
  */
-export function useConversationHost({ code, userLanguage, initialContext, api = roomApi }: Options) {
+export function useConversationHost({ code, userLanguage, userName, initialContext, api = roomApi }: Options) {
   const [captions, setCaptions] = useState<ConvCaption[]>([]);
   const [whispers, setWhispers] = useState<{ id: string; whisper: string; at: number }[]>([]);
   const [alerts, setAlerts] = useState<RoomAlert[]>([]);
@@ -42,6 +44,10 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
   const [phase, setPhaseState] = useState<PhaseState>({ phase: 'idle', by: null });
   const [notice, setNotice] = useState<string | null>(null);
   const [ended, setEnded] = useState(false);
+  // What the guest asked to be called on the join page (from their messages; presence also carries it).
+  const [messageName, setMessageName] = useState<string | null>(null);
+  // Someone asked for the user's phone or email: the user decides on screen whether to share it.
+  const [contactRequest, setContactRequest] = useState<{ id: string; kind: ContactKind } | null>(null);
 
   // Mutable room state the async turn pipeline reads (refs avoid stale closures).
   const r = useRef({
@@ -54,22 +60,25 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
     introduced: false,
     awaiting: new Set<string>(),
     lastTurnAt: 0,
-    local: null as { pid: string; language: LanguageTarget } | null,
+    local: null as { pid: string; language: LanguageTarget; name: string | null } | null,
     ended: false,
     /** A turn is still streaming: early speech finishing must not free the floor yet. */
     turnPending: false,
   });
 
   const onGuestRef = useRef<(env: GuestEnvelope) => void>(() => {});
-  const { connected, presence, send } = useHostChannel(code, 'conversation', (env) => onGuestRef.current(env));
+  const { connected, presence, send } = useHostChannel(code, 'conversation', (env) => onGuestRef.current(env), userName);
   const localPresent = presence.find((p) => p.role === 'local');
 
-  // Learn the guest's id and language from presence too (they may not have sent anything since this screen opened).
+  // Learn the guest's id, language and name from presence too (they may not have sent anything since this screen opened).
+  const presentName = cleanName(localPresent?.name) || null;
   useEffect(() => {
     if (localPresent && !r.current.local) {
-      r.current.local = { pid: localPresent.pid, language: localPresent.language ?? MANDARIN };
+      r.current.local = { pid: localPresent.pid, language: localPresent.language ?? MANDARIN, name: presentName };
     }
-  }, [localPresent]);
+    if (presentName && r.current.local) r.current.local.name = presentName;
+  }, [localPresent, presentName]);
+  const localName = presentName ?? messageName;
 
   const toLocal = useCallback((msg: ServerMessage) => send({ to: 'local', msg }), [send]);
 
@@ -112,7 +121,7 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
   );
 
   const runTurn = useCallback(
-    async (speaker: RoomSpeaker, input: { audio?: AudioInput; text?: string }) => {
+    async (speaker: RoomSpeaker, input: { audio?: AudioInput; text?: string }, sharing = false) => {
       const s = r.current;
       if (s.ended) return;
       const busy = s.phase.phase === 'thinking' || s.phase.phase === 'speaking' || (s.phase.phase === 'listening' && s.phase.by !== speaker);
@@ -160,6 +169,7 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
             ...input,
             userLanguage: { code: userLanguage.code, name: userLanguage.name },
             localLanguage,
+            localName: s.local?.name ?? null,
             context: s.context,
             recent: s.recent.slice(-RECENT_LINES),
             introduced: s.introduced,
@@ -195,6 +205,8 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
           s.summary = turn.summary_update;
           setSummary(turn.summary_update);
         }
+        // A turn that shares (or declines) contact details never asks again.
+        if (turn.contact_request && !sharing) setContactRequest({ id: uid(), kind: turn.contact_request });
 
         // What Hao says aloud, and to whom (the line for the other person may already be playing).
         if (!spokenEarly) {
@@ -208,8 +220,10 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
       } catch (e) {
         s.turnPending = false;
         setPhase('idle');
+        console.warn('[room] turn failed', e);
+        // The guest's page words this in their language; the host sees the actual reason.
         if (speaker === 'LOCAL') toLocal({ t: 'error', code: 'ai_failed', message: '抱歉，出了点问题，请再说一次。' });
-        else setNotice(e instanceof Error ? e.message : 'Hao had a problem with that turn.');
+        setNotice(e instanceof Error ? e.message : 'Hao had a problem with that turn.');
       }
     },
     [api, caption, played, setPhase, toLocal, userLanguage]
@@ -238,7 +252,9 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
         // Only one guest per conversation; a second phone gets told the room is taken.
         return send({ to: { pid: env.from }, msg: { t: 'error', code: 'room_full', message: '这个二维码已被另一部手机使用。' } });
       }
-      s.local = { pid: env.from, language: env.language ?? s.local?.language ?? MANDARIN };
+      const name = cleanName(env.name) || s.local?.name || null;
+      s.local = { pid: env.from, language: env.language ?? s.local?.language ?? MANDARIN, name };
+      if (name) setMessageName(name);
       const msg = env.msg;
       switch (msg.t) {
         case 'hello':
@@ -271,10 +287,9 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
       if (s.ended) return;
       s.ended = true;
       send({ to: 'all', msg: { t: 'ended', reason } });
-      void api.finish(s.summary, s.context);
       setEnded(true);
     },
-    [api, send]
+    [send]
   );
 
   // Close after 5 quiet minutes.
@@ -286,6 +301,30 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
     return () => clearInterval(id);
   }, [end]);
 
+  /**
+   * The user said yes: Hao tells them in their language (`line`, the user's words, e.g. "Here's my number: …"),
+   * then the exact value appears on their page as a card they can copy.
+   */
+  const shareContact = useCallback(
+    async (kind: ContactKind, value: string, line: string) => {
+      setContactRequest(null);
+      await runTurn('USER', { text: line }, true);
+      if (r.current.ended) return;
+      const card = { speaker: 'AGENT' as const, to: 'LOCAL' as const, text: value, contact: { kind, value } };
+      caption('host', card);
+      caption('local', card);
+    },
+    [caption, runTurn]
+  );
+  /** The user said no: Hao turns them down politely (`line`, e.g. "Sorry, I'd rather not share my number."). */
+  const declineContact = useCallback(
+    (line: string) => {
+      setContactRequest(null);
+      return runTurn('USER', { text: line }, true);
+    },
+    [runTurn]
+  );
+
   const setContext = useCallback((next: RoomContext | null) => {
     r.current.context = next;
     setContextState(next);
@@ -294,6 +333,7 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
   return {
     connected,
     localConnected: !!localPresent,
+    localName,
     captions,
     whispers,
     alerts,
@@ -305,6 +345,11 @@ export function useConversationHost({ code, userLanguage, initialContext, api = 
     ended,
     setContext,
     end,
+    contactRequest,
+    shareContact,
+    declineContact,
+    /** Close the request without saying anything. */
+    dismissContact: () => setContactRequest(null),
     /** The user's own turn. */
     claimMic: (active: boolean) => claimMic('USER', active),
     sendAudio: (audio: AudioInput) => runTurn('USER', { audio }),

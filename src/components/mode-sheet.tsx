@@ -3,10 +3,11 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChatModes, type ChatMode } from '@/components/chat-composer';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing, themed } from '@/constants/theme';
 import { tx, useT } from '@/lib/i18n';
 
 const DESCRIPTIONS: Record<ChatMode, string> = {
+  places: tx('Food and places picked for you, ranked by what people from your country loved. Hao remembers where you went.'),
   interpret: tx('Hao speaks Chinese to a local person for you and tells you what they said.'),
   guide: tx('Step-by-step help with WeChat, payments, transport, SIM cards and more.'),
   memory: tx('Your second brain: ask what people told you, where you went, or tell Hao to remember something.'),
@@ -70,7 +71,7 @@ export function ModeSheet({ visible, mode, onSelect, onBrowseTopics, onClose }: 
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(27,26,31,0.35)' },
   sheet: {
     backgroundColor: Colors.paper,
@@ -98,4 +99,4 @@ const styles = StyleSheet.create({
   rowBody: { fontSize: 13, lineHeight: 18, color: Colors.inkSoft, marginTop: 2 },
   link: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 14, paddingHorizontal: 6 },
   linkText: { flex: 1, fontSize: 15, fontWeight: '700', color: Colors.ink },
-});
+}));

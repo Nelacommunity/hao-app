@@ -3,7 +3,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import { formatMemories } from '@shared/ai/prompts';
-import type { MemoryItem, MemoryKind, NewMemory } from '@shared/ai/types';
+import type { MemoryItem, MemoryKind, NewMemory, ToolUse } from '@shared/ai/types';
 
 import type { Database } from '@/lib/database.types';
 
@@ -52,6 +52,17 @@ export async function remember(db: SupabaseClient<Database>, items: NewMemory[],
 /** Loads memory context for an agent turn, or nothing if the user turned memory off. */
 export async function memoryContext(request: Request, userId: string, query: string | undefined) {
   const db = userClient(request);
-  if (!db || !(await memoryEnabled(db, userId))) return { db: null, text: undefined };
-  return { db, text: formatMemories(await recallMemories(db, query)) };
+  if (!db || !(await memoryEnabled(db, userId))) return { db: null, text: undefined, count: 0 };
+  const memories = await recallMemories(db, query);
+  return { db, text: formatMemories(memories), count: memories.length };
+}
+
+/** The tools shown above a reply: knowledge read, memories recalled and saved. */
+export function toolUses(o: { sources?: string[]; recalled: number; saved: NewMemory[] }): ToolUse[] {
+  const tools: ToolUse[] = [];
+  if (o.recalled) tools.push({ tool: 'recall', count: o.recalled });
+  if (o.sources?.length) tools.push({ tool: 'knowledge', items: o.sources });
+  const saved = o.saved.map((m) => m.text.trim()).filter(Boolean);
+  if (saved.length) tools.push({ tool: 'remember', items: saved });
+  return tools;
 }

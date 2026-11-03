@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
-import { TextInput, View } from 'react-native';
+import { type TextInputInstance, View } from 'react-native';
 
 import { AuthFooter, AuthScreen, Field, FormMessage, isEmail, PrimaryButton, TextLink } from '@/components/auth-ui';
 import { supabase } from '@/lib/supabase';
@@ -12,7 +12,7 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const passwordRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInputInstance>(null);
 
   const submit = async () => {
     if (!isEmail(email)) return setError(t('Enter a valid email address.'));

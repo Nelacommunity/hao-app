@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import type { GuideTurn, LanguageTarget, Preferences } from '@shared/ai/types';
 
@@ -9,8 +9,8 @@ export { applyGuideTurn };
 
 export type { GuideChatMessage, GuideState } from '@/lib/guide-state';
 
-const EMPTY: GuideState = { messages: [], tasks: [], activeTaskId: null };
-const STORAGE_KEY = 'hao:guide:v1';
+export const EMPTY_GUIDE: GuideState = { messages: [], tasks: [], activeTaskId: null };
+const LEGACY_KEY = 'hao:guide:v1';
 
 export async function askGuide(input: {
   language: LanguageTarget;
@@ -18,6 +18,8 @@ export async function askGuide(input: {
   city: string | null;
   state: GuideState;
   text: string;
+  /** The Discover story the user is asking about ("Ask Hao more"). */
+  storyId?: string | null;
 }): Promise<GuideTurn> {
   const { data } = await supabase.auth.getSession();
   const res = await fetch('/api/guide', {
@@ -31,6 +33,7 @@ export async function askGuide(input: {
       tasks: input.state.tasks,
       activeTaskId: input.state.activeTaskId,
       text: input.text,
+      storyId: input.storyId ?? undefined,
     }),
   });
   const body = await res.json().catch(() => null);
@@ -38,26 +41,21 @@ export async function askGuide(input: {
   return body as GuideTurn;
 }
 
-function load(): GuideState {
+/** The Guide chat from before chats were saved (one chat on the device), if there is one. */
+export function legacyGuideState(): GuideState | null {
   try {
-    const raw = globalThis.localStorage?.getItem(STORAGE_KEY);
-    return raw ? { ...EMPTY, ...(JSON.parse(raw) as GuideState) } : EMPTY;
+    const raw = globalThis.localStorage?.getItem(LEGACY_KEY);
+    if (!raw) return null;
+    globalThis.localStorage?.removeItem(LEGACY_KEY);
+    return { ...EMPTY_GUIDE, ...(JSON.parse(raw) as GuideState) };
   } catch {
-    return EMPTY;
+    return null;
   }
 }
 
-/** Guide chat and tasks, saved on the device so progress survives restarts. */
-export function useGuideState() {
-  const [state, setState] = useState<GuideState>(load);
-
-  useEffect(() => {
-    try {
-      globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      // Storage can be unavailable (private mode); the chat still works in memory.
-    }
-  }, [state]);
+/** One Guide chat and its checklists; saving is up to the caller (see lib/chats). */
+export function useGuideState(initial: GuideState) {
+  const [state, setState] = useState<GuideState>(initial);
 
   const toggleStep = useCallback((taskId: string, index: number) => {
     setState((s) => ({

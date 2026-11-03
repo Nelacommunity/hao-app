@@ -1,21 +1,20 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
-import { LinearGradient } from 'expo-linear-gradient';
 import { router, useIsFocused } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { RoomContexts, type RoomContext, type RoomType } from '@shared/rooms/protocol';
+import type { RoomType } from '@shared/rooms/protocol';
 
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing, themed } from '@/constants/theme';
 import { useAuth, useLanguagePreference } from '@/lib/auth';
 import { useHostChannel } from '@/lib/rooms/channel';
-import { ensureHostedRoom, getRoomContext, setRoomContext } from '@/lib/rooms/session';
+import { ensureHostedRoom } from '@/lib/rooms/session';
 import { tx, useT } from '@/lib/i18n';
 
 type Tab = 'code' | 'scan';
@@ -43,7 +42,7 @@ export default function QrScreen() {
   const focused = useIsFocused();
 
   return (
-    <LinearGradient colors={[Colors.red, Colors.redDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }}>
+    <View style={styles.page}>
       <StatusBar style="light" />
       <SafeAreaView style={{ flex: 1 }}>
         <View style={styles.topBar}>
@@ -58,7 +57,7 @@ export default function QrScreen() {
                 accessibilityRole="tab"
                 accessibilityState={{ selected: tab === id }}
                 style={[styles.tab, tab === id && styles.tabActive]}>
-                <Ionicons name={id === 'code' ? 'qr-code' : 'scan'} size={16} color={tab === id ? Colors.red : '#fff'} />
+                <Ionicons name={id === 'code' ? 'qr-code' : 'scan'} size={16} color={tab === id ? '#fff' : Colors.inkSoft} />
                 <Text style={[styles.tabText, tab === id && styles.tabTextActive]}>{id === 'code' ? t('My code') : t('Scan')}</Text>
               </Pressable>
             ))}
@@ -68,7 +67,7 @@ export default function QrScreen() {
 
         {tab === 'code' ? <MyCode active={focused} /> : <Scanner active={focused} />}
       </SafeAreaView>
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -79,7 +78,6 @@ function MyCode({ active }: { active: boolean }) {
   const [language] = useLanguagePreference();
   const { width } = useWindowDimensions();
   const [mode, setMode] = useState<RoomType>('conversation');
-  const [place, setPlace] = useState<RoomContext | null>(getRoomContext);
   const navigated = useRef(false);
 
   // Rooms are just unguessable codes on a Supabase Realtime channel; creating one is instant.
@@ -91,7 +89,7 @@ function MyCode({ active }: { active: boolean }) {
   const insecureLink = room.joinUrl.startsWith('http://');
 
   // Listen on the room channel only while this screen is visible, so the live screen can take over.
-  const { presence } = useHostChannel(active ? room.roomId : null, mode, () => {});
+  const { presence } = useHostChannel(active ? room.roomId : null, mode, () => {}, name);
   const localPresent = presence.some((p) => p.role === 'local');
   const listeners = presence.filter((p) => p.role === 'listener').length;
 
@@ -102,11 +100,6 @@ function MyCode({ active }: { active: boolean }) {
       router.replace('/room/conversation');
     }
   }, [mode, localPresent]);
-
-  const choosePlace = (next: RoomContext) => {
-    setPlace(next);
-    setRoomContext(next);
-  };
 
   const switchMode = (next: RoomType) => setMode(next);
 
@@ -141,23 +134,10 @@ function MyCode({ active }: { active: boolean }) {
           ))}
         </View>
 
-        {mode === 'conversation' ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.places} contentContainerStyle={styles.placesContent}>
-            {(Object.keys(RoomContexts) as RoomContext[]).map((c) => (
-              <Pressable
-                key={c}
-                onPress={() => choosePlace(c)}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: place === c }}
-                style={[styles.place, place === c && styles.placeActive]}>
-                <Text style={[styles.placeText, place === c && { color: '#fff' }]}>{t(RoomContexts[c].label)}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        ) : null}
 
         <View style={[styles.qrBox, { width: qrSize + 24, height: qrSize + 24 }]}>
-          <QRCode value={room.joinUrl} size={qrSize} color={Colors.ink} backgroundColor="#fff" ecl="M" />
+          {/* Always dark on white, whatever the theme, so every scanner reads it. */}
+          <QRCode value={room.joinUrl} size={qrSize} color="#111111" backgroundColor="#fff" ecl="M" />
         </View>
 
         <Text style={styles.captionZh}>{MODES[mode].zh}</Text>
@@ -183,7 +163,7 @@ function MyCode({ active }: { active: boolean }) {
             onPress={() => router.replace('/room/broadcast')}
             accessibilityRole="button"
             style={({ pressed }) => [styles.whiteBtn, pressed && styles.pressed]}>
-            <Ionicons name="radio" size={20} color={Colors.red} />
+            <Ionicons name="radio" size={20} color="#fff" />
             <Text style={styles.whiteBtnText}>{listeners > 0 ? t('Start broadcast · {count} waiting', { count: listeners }) : t('Start broadcast')}</Text>
           </Pressable>
         )}
@@ -287,7 +267,7 @@ function Scanner({ active }: { active: boolean }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   pressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.md, height: 60 },
   roundBtn: {
@@ -300,11 +280,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tabs: { flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.18)', borderRadius: Radius.pill, padding: 4 },
+  page: { flex: 1, backgroundColor: Colors.paper },
+  tabs: { flexDirection: 'row', backgroundColor: Colors.card, borderRadius: Radius.pill, padding: 4 },
   tab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 8, borderRadius: Radius.pill },
-  tabActive: { backgroundColor: '#fff' },
-  tabText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  tabTextActive: { color: Colors.red },
+  tabActive: { backgroundColor: Colors.strong },
+  tabText: { color: Colors.inkSoft, fontSize: 14, fontWeight: '700' },
+  tabTextActive: { color: '#fff' },
 
   codeWrap: { flex: 1, paddingHorizontal: Spacing.lg, justifyContent: 'center' },
   card: {
@@ -334,15 +315,11 @@ const styles = StyleSheet.create({
     borderColor: Colors.line,
   },
   mode: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: 12 },
-  modeActive: { backgroundColor: Colors.card, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 6, elevation: 2 },
+  modeActive: { backgroundColor: Colors.strong, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 6, elevation: 2 },
   modeText: { fontSize: 13, fontWeight: '700', color: Colors.muted },
   modeTextActive: { color: Colors.ink },
-  places: { alignSelf: 'stretch', marginTop: Spacing.sm, flexGrow: 0 },
-  placesContent: { gap: 6 },
-  place: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radius.pill, backgroundColor: Colors.paper, borderWidth: 1, borderColor: Colors.line },
-  placeActive: { backgroundColor: Colors.ink, borderColor: Colors.ink },
-  placeText: { fontSize: 13, fontWeight: '700', color: Colors.inkSoft },
-  qrBox: { alignItems: 'center', justifyContent: 'center', marginTop: Spacing.lg, marginBottom: Spacing.md },
+  // The white card around the code, like WeChat's in dark mode.
+  qrBox: { alignItems: 'center', justifyContent: 'center', marginTop: Spacing.lg, marginBottom: Spacing.md, backgroundColor: '#fff', borderRadius: Radius.md },
   qrError: { alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md },
   qrErrorText: { fontSize: 13, lineHeight: 19, color: Colors.inkSoft, textAlign: 'center' },
   retry: { paddingHorizontal: Spacing.md, paddingVertical: 8, borderRadius: Radius.pill, backgroundColor: Colors.red },
@@ -360,11 +337,11 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     height: 56,
     borderRadius: Radius.pill,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.red,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  whiteBtnText: { color: Colors.red, fontSize: 17, fontWeight: '800' },
+  whiteBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
 
   scanWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.lg, gap: Spacing.lg },
   camera: { borderRadius: 32, overflow: 'hidden', backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
@@ -385,7 +362,7 @@ const styles = StyleSheet.create({
   resultBtnGhostText: { color: Colors.ink, fontWeight: '800', fontSize: 15 },
 
   permission: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.lg, gap: Spacing.md },
-  permissionIcon: { width: 80, height: 80, borderRadius: 26, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  permissionIcon: { width: 80, height: 80, borderRadius: 26, backgroundColor: Colors.card, alignItems: 'center', justifyContent: 'center' },
   permissionTitle: { fontSize: 24, fontWeight: '800', color: '#fff' },
   permissionBody: { fontSize: 15, lineHeight: 22, color: 'rgba(255,255,255,0.85)', textAlign: 'center', marginBottom: Spacing.sm },
-});
+}));

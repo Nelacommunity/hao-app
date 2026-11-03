@@ -1,26 +1,41 @@
-import type { DietTag } from '@/data/food';
+import type Ionicons from '@expo/vector-icons/Ionicons';
+
 import { tx } from '@shared/i18n/tx';
 
-export type PlaceCategory = 'landmark' | 'nature' | 'culture' | 'market' | 'food';
+export type PlaceCategory = 'landmark' | 'nature' | 'culture' | 'market' | 'food' | 'hotel';
 
+/**
+ * A point of interest from AMap (高德). Coordinates are GCJ-02, the system AMap's data and map
+ * tiles use in mainland China; the user's GPS fix is converted to match (see lib/location).
+ */
 export type Place = {
+  /** AMap POI id, e.g. B000A8UIN8. */
   id: string;
-  city: CityId;
+  /** English name from AMap, or the Chinese name when AMap has none. */
   name: string;
   nameZh: string;
+  address: string;
   addressZh: string;
+  /** City and district in Chinese, e.g. 北京市 · 东城区. */
+  cityZh: string;
+  districtZh: string;
   category: PlaceCategory;
-  emoji: string;
-  rating: number;
-  hours: string;
-  ticket: string;
-  tip: string;
-  description: string;
+  /** AMap's most specific type, e.g. 世界遗产 or 四川菜(川菜). */
+  typeZh: string;
+  /** The same in the traveller's language (missing in places cached before it existed). */
+  type?: string;
   latitude: number;
   longitude: number;
-  /** Restaurants: dishes from src/data/food.ts they're known for. */
-  dishIds?: string[];
-  tags?: DietTag[];
+  rating?: number;
+  /** Typical spend per person in CNY (restaurants, sights, hotels). */
+  cost?: number;
+  hours?: string;
+  tel?: string;
+  /** AMap's tags, e.g. signature dishes for restaurants. */
+  tags: string[];
+  photos: string[];
+  /** Metres from the search centre, for nearby searches. */
+  distanceM?: number;
 };
 
 export type CityId = 'beijing' | 'shanghai' | 'chengdu' | 'xian';
@@ -32,363 +47,83 @@ export const Cities: { id: CityId; name: string; nameZh: string; latitude: numbe
   { id: 'xian', name: tx("Xi'an"), nameZh: '西安', latitude: 34.2658, longitude: 108.9541 },
 ];
 
-export const CategoryMeta: Record<PlaceCategory, { label: string; short: string; color: string }> = {
-  landmark: { label: tx('Landmarks'), short: tx('Sights'), color: '#D7263D' },
-  nature: { label: tx('Nature'), short: tx('Nature'), color: '#1F9D7A' },
-  culture: { label: tx('Culture'), short: tx('Culture'), color: '#6C4AB6' },
-  market: { label: tx('Markets'), short: tx('Markets'), color: '#E08A1E' },
-  food: { label: tx('Food'), short: tx('Food'), color: '#E4572E' },
+export type IconName = React.ComponentProps<typeof Ionicons>['name'];
+
+/**
+ * `types` are AMap POI type codes (高德POI分类编码 V1.06) searched for each category. `icon` is what
+ * the app shows; `emoji` is only for the map markers, which are drawn inside a web page.
+ */
+export const CategoryMeta: Record<PlaceCategory, { label: string; short: string; color: string; icon: IconName; emoji: string; types: string }> = {
+  landmark: { label: tx('Landmarks'), short: tx('Sights'), color: '#D7263D', icon: 'camera', emoji: '🏯', types: '110000|110200|110105' },
+  nature: { label: tx('Nature'), short: tx('Nature'), color: '#1F9D7A', icon: 'leaf', emoji: '🌿', types: '110101|110102|110103|110104|110208' },
+  culture: { label: tx('Culture'), short: tx('Culture'), color: '#6C4AB6', icon: 'library', emoji: '🏛️', types: '140100|140200|140400|140600|140800|110205|110206|110207' },
+  market: { label: tx('Markets'), short: tx('Markets'), color: '#E08A1E', icon: 'bag-handle', emoji: '🛍️', types: '061000|061001|060700|060701|060100|061201' },
+  food: { label: tx('Food'), short: tx('Food'), color: '#E4572E', icon: 'restaurant', emoji: '🥢', types: '050100|050200|050400|050600|050800|050900' },
+  // 住宿服务: hotels, guesthouses and hostels.
+  hotel: { label: tx('Hotels'), short: tx('Hotels'), color: '#2576FF', icon: 'bed', emoji: '🏨', types: '100000|100100|100200' },
 };
 
-const Sights: Place[] = [
-  {
-    id: 'forbidden-city',
-    city: 'beijing',
-    name: tx('The Forbidden City'),
-    nameZh: '故宫博物院',
-    addressZh: '北京市东城区景山前街4号',
-    category: 'landmark',
-    emoji: '🏯',
-    rating: 4.9,
-    hours: tx('08:30 – 17:00 · Closed Mon'),
-    ticket: '¥60',
-    tip: tx('Tickets sell out — book with your passport number a few days ahead.'),
-    description: tx('Imperial palace of the Ming and Qing dynasties, with 980 buildings across 72 hectares.'),
-    latitude: 39.9163,
-    longitude: 116.3972,
-  },
-  {
-    id: 'temple-of-heaven',
-    city: 'beijing',
-    name: tx('Temple of Heaven'),
-    nameZh: '天坛公园',
-    addressZh: '北京市东城区天坛东里甲1号',
-    category: 'culture',
-    emoji: '⛩️',
-    rating: 4.8,
-    hours: '06:00 – 22:00',
-    ticket: '¥34',
-    tip: tx('Come before 8am to see locals doing tai chi and playing jianzi.'),
-    description: tx('Where emperors prayed for good harvests. The park is a living stage of Beijing life.'),
-    latitude: 39.8822,
-    longitude: 116.4066,
-  },
-  {
-    id: 'nanluoguxiang',
-    city: 'beijing',
-    name: tx('Nanluoguxiang Hutong'),
-    nameZh: '南锣鼓巷',
-    addressZh: '北京市东城区南锣鼓巷',
-    category: 'market',
-    emoji: '🏮',
-    rating: 4.4,
-    hours: tx('Open all day'),
-    ticket: tx('Free'),
-    tip: tx('Wander the side alleys — the quiet courtyards are the real treasure.'),
-    description: tx('700-year-old alley lined with snack shops, cafés and traditional courtyard homes.'),
-    latitude: 39.9373,
-    longitude: 116.403,
-  },
-  {
-    id: 'the-bund',
-    city: 'shanghai',
-    name: tx('The Bund'),
-    nameZh: '外滩',
-    addressZh: '上海市黄浦区中山东一路',
-    category: 'landmark',
-    emoji: '🌃',
-    rating: 4.8,
-    hours: tx('Open all day'),
-    ticket: tx('Free'),
-    tip: tx('Lights switch on around 18:00 — stay for the Pudong skyline.'),
-    description: tx('Riverside promenade of colonial-era buildings facing the futuristic Pudong skyline.'),
-    latitude: 31.2401,
-    longitude: 121.4903,
-  },
-  {
-    id: 'yu-garden',
-    city: 'shanghai',
-    name: tx('Yu Garden'),
-    nameZh: '豫园',
-    addressZh: '上海市黄浦区福佑路168号',
-    category: 'culture',
-    emoji: '🪷',
-    rating: 4.6,
-    hours: tx('09:00 – 16:30 · Closed Mon'),
-    ticket: '¥40',
-    tip: tx('Try xiaolongbao at the bazaar outside, but expect a queue.'),
-    description: tx('A classical Ming dynasty garden with rockeries, ponds and zigzag bridges.'),
-    latitude: 31.2272,
-    longitude: 121.4921,
-  },
-  {
-    id: 'panda-base',
-    city: 'chengdu',
-    name: tx('Giant Panda Base'),
-    nameZh: '成都大熊猫繁育研究基地',
-    addressZh: '四川省成都市成华区熊猫大道1375号',
-    category: 'nature',
-    emoji: '🐼',
-    rating: 4.9,
-    hours: '07:30 – 18:00',
-    ticket: '¥55',
-    tip: tx('Pandas are most active at feeding time, 8–10am.'),
-    description: tx('Watch giant and red pandas play, eat and nap in bamboo-filled enclosures.'),
-    latitude: 30.7327,
-    longitude: 104.1466,
-  },
-  {
-    id: 'kuanzhai-alley',
-    city: 'chengdu',
-    name: tx('Kuanzhai Alley'),
-    nameZh: '宽窄巷子',
-    addressZh: '四川省成都市青羊区宽窄巷子',
-    category: 'market',
-    emoji: '🍵',
-    rating: 4.5,
-    hours: tx('Open all day'),
-    ticket: tx('Free'),
-    tip: tx('Sit in a teahouse and try an ear-cleaning — a true Chengdu experience.'),
-    description: tx('Restored Qing dynasty lanes full of teahouses, street snacks and Sichuan opera.'),
-    latitude: 30.6699,
-    longitude: 104.0556,
-  },
-  {
-    id: 'terracotta-army',
-    city: 'xian',
-    name: tx('Terracotta Army'),
-    nameZh: '秦始皇帝陵博物院',
-    addressZh: '陕西省西安市临潼区秦陵北路',
-    category: 'landmark',
-    emoji: '🗿',
-    rating: 4.9,
-    hours: '08:30 – 18:00',
-    ticket: '¥120',
-    tip: tx('Start at Pit 3 and finish at Pit 1 for the biggest wow moment.'),
-    description: tx('Thousands of life-size clay soldiers guarding the tomb of China’s first emperor.'),
-    latitude: 34.3853,
-    longitude: 109.2785,
-  },
-  {
-    id: 'muslim-quarter',
-    city: 'xian',
-    name: tx('Muslim Quarter'),
-    nameZh: '回民街',
-    addressZh: '陕西省西安市莲湖区北院门',
-    category: 'market',
-    emoji: '🥙',
-    rating: 4.5,
-    hours: '10:00 – 23:00',
-    ticket: tx('Free'),
-    tip: tx('Try roujiamo and yangrou paomo — all halal.'),
-    description: tx('Bustling food street near the Drum Tower, famous for halal snacks.'),
-    latitude: 34.2635,
-    longitude: 108.9416,
-  },
-];
+// Hotels are everywhere in Chinese cities and would crowd out everything else, so "All" leaves them out.
+export const AllCategoryTypes = (Object.keys(CategoryMeta) as PlaceCategory[])
+  .filter((c) => c !== 'hotel')
+  .map((c) => CategoryMeta[c].types)
+  .join('|');
 
-// Restaurants (approximate coordinates). `ticket` holds the typical spend per person.
-const Restaurants: Place[] = [
-  {
-    id: 'siji-minfu',
-    city: 'beijing',
-    name: tx('Siji Minfu Roast Duck'),
-    nameZh: '四季民福烤鸭店（故宫店）',
-    addressZh: '北京市东城区南池子大街11号',
-    category: 'food',
-    emoji: '🦆',
-    rating: 4.7,
-    hours: '10:30 – 21:30',
-    ticket: tx('¥150/person'),
-    tip: tx('Queue numbers go fast at dinner; arrive before 17:00 or take a number and walk to the Forbidden City moat.'),
-    description: tx('Locals’ favourite for crisp Peking duck carved at the table, steps from the Forbidden City.'),
-    latitude: 39.9118,
-    longitude: 116.4033,
-    dishIds: ['peking-duck'],
-  },
-  {
-    id: 'huguosi-snacks',
-    city: 'beijing',
-    name: tx('Huguosi Snacks'),
-    nameZh: '护国寺小吃（护国寺总店）',
-    addressZh: '北京市西城区护国寺大街93号',
-    category: 'food',
-    emoji: '🥮',
-    rating: 4.4,
-    hours: '05:30 – 21:00',
-    ticket: tx('¥30/person'),
-    tip: tx('Point at the trays: everything is on display. Great for a cheap breakfast.'),
-    description: tx('Old-Beijing snack hall with dozens of traditional sweets, buns and breakfast dishes.'),
-    latitude: 39.9378,
-    longitude: 116.3735,
-    dishIds: ['jianbing'],
-    tags: ['street'],
-  },
-  {
-    id: 'lily-vegetarian',
-    city: 'beijing',
-    name: tx('Lily Vegetarian'),
-    nameZh: '百合素食',
-    addressZh: '北京市东城区东四北大街香饵胡同23号',
-    category: 'food',
-    emoji: '🥬',
-    rating: 4.6,
-    hours: '11:00 – 21:00',
-    ticket: tx('¥90/person'),
-    tip: tx('Fully vegetarian, so there’s no need to explain dietary rules.'),
-    description: tx('Calm courtyard restaurant serving creative vegetarian Chinese dishes.'),
-    latitude: 39.9367,
-    longitude: 116.418,
-    dishIds: ['dim-sum'],
-    tags: ['vegetarian'],
-  },
-  {
-    id: 'jiajia-tangbao',
-    city: 'shanghai',
-    name: tx('Jia Jia Tang Bao'),
-    nameZh: '佳家汤包（黄河路店）',
-    addressZh: '上海市黄浦区黄河路90号',
-    category: 'food',
-    emoji: '🥟',
-    rating: 4.5,
-    hours: '07:00 – 20:00',
-    ticket: tx('¥40/person'),
-    tip: tx('Order at the counter first, then find a seat. Crab-roe baskets sell out by lunchtime.'),
-    description: tx('Tiny, famous soup-dumpling shop where every basket is folded to order.'),
-    latitude: 31.2368,
-    longitude: 121.4729,
-    dishIds: ['xiaolongbao'],
-    tags: ['street'],
-  },
-  {
-    id: 'nanxiang',
-    city: 'shanghai',
-    name: tx('Nanxiang Steamed Bun'),
-    nameZh: '南翔馒头店（豫园店）',
-    addressZh: '上海市黄浦区豫园路85号',
-    category: 'food',
-    emoji: '🏮',
-    rating: 4.3,
-    hours: '08:30 – 21:00',
-    ticket: tx('¥60/person'),
-    tip: tx('The takeaway window downstairs is quicker than the dining rooms upstairs.'),
-    description: tx('Century-old xiaolongbao institution inside the Yu Garden bazaar.'),
-    latitude: 31.2268,
-    longitude: 121.4925,
-    dishIds: ['xiaolongbao'],
-  },
-  {
-    id: 'gongdelin',
-    city: 'shanghai',
-    name: tx('Gongdelin Vegetarian'),
-    nameZh: '功德林素食（南京西路店）',
-    addressZh: '上海市黄浦区南京西路445号',
-    category: 'food',
-    emoji: '🍄',
-    rating: 4.4,
-    hours: '11:00 – 21:00',
-    ticket: tx('¥80/person'),
-    tip: tx('Known for “mock meat” made from tofu and mushrooms: all vegetarian.'),
-    description: tx('Historic Buddhist vegetarian restaurant founded in 1922.'),
-    latitude: 31.2335,
-    longitude: 121.47,
-    dishIds: ['dim-sum'],
-    tags: ['vegetarian'],
-  },
-  {
-    id: 'chen-mapo',
-    city: 'chengdu',
-    name: tx('Chen Mapo Tofu'),
-    nameZh: '陈麻婆豆腐（青华路店）',
-    addressZh: '四川省成都市青羊区青华路10号',
-    category: 'food',
-    emoji: '🌶️',
-    rating: 4.5,
-    hours: '11:00 – 21:00',
-    ticket: tx('¥70/person'),
-    tip: 'Ask for 微辣 (mild) if you’re new to Sichuan pepper.',
-    description: tx('The restaurant line that claims the original mapo tofu recipe from 1862.'),
-    latitude: 30.6668,
-    longitude: 104.039,
-    dishIds: ['mapo-tofu'],
-    tags: ['spicy'],
-  },
-  {
-    id: 'shu-jiu-xiang',
-    city: 'chengdu',
-    name: tx('Shu Jiu Xiang Hotpot'),
-    nameZh: '蜀九香火锅（玉林店）',
-    addressZh: '四川省成都市武侯区玉林北路',
-    category: 'food',
-    emoji: '🍲',
-    rating: 4.6,
-    hours: '11:00 – 02:00',
-    ticket: tx('¥120/person'),
-    tip: 'Order a 鸳鸯锅 (split pot) so half the table can eat non-spicy.',
-    description: tx('Lively local hotpot chain with a fierce beef-tallow broth and late hours.'),
-    latitude: 30.642,
-    longitude: 104.079,
-    dishIds: ['hotpot'],
-    tags: ['spicy'],
-  },
-  {
-    id: 'wenshu-vegetarian',
-    city: 'chengdu',
-    name: tx('Wenshu Monastery Vegetarian'),
-    nameZh: '文殊院香积厨素斋',
-    addressZh: '四川省成都市青羊区文殊院街66号',
-    category: 'food',
-    emoji: '🪷',
-    rating: 4.5,
-    hours: '10:00 – 20:00',
-    ticket: tx('¥50/person'),
-    tip: tx('Combine lunch with a walk through the monastery gardens and teahouse.'),
-    description: tx('Monastery kitchen serving simple, spice-free Buddhist vegetarian meals.'),
-    latitude: 30.6745,
-    longitude: 104.0726,
-    dishIds: ['dim-sum'],
-    tags: ['vegetarian'],
-  },
-  {
-    id: 'lao-sun-jia',
-    city: 'xian',
-    name: tx('Lao Sun Jia'),
-    nameZh: '老孙家饭庄（东大街店）',
-    addressZh: '陕西省西安市碑林区东大街364号',
-    category: 'food',
-    emoji: '🥣',
-    rating: 4.4,
-    hours: '07:00 – 21:30',
-    ticket: tx('¥50/person'),
-    tip: tx('Tear the bread into tiny pieces yourself before they add the lamb soup: that’s the tradition.'),
-    description: tx('Halal restaurant famous since 1898 for yangrou paomo (lamb soup with bread).'),
-    latitude: 34.26,
-    longitude: 108.96,
-    dishIds: ['roujiamo'],
-    tags: ['halal'],
-  },
-  {
-    id: 'fan-ji',
-    city: 'xian',
-    name: tx('Fan Ji Rou Jia Mo'),
-    nameZh: '樊记腊汁肉夹馍',
-    addressZh: '陕西省西安市碑林区竹笆市53号',
-    category: 'food',
-    emoji: '🥙',
-    rating: 4.3,
-    hours: '08:00 – 20:00',
-    ticket: tx('¥20/person'),
-    tip: tx('This one uses pork. Go to the Muslim Quarter for beef or lamb versions.'),
-    description: tx('A standing-room counter that has made the same braised-pork “Chinese burger” for decades.'),
-    latitude: 34.262,
-    longitude: 108.944,
-    dishIds: ['roujiamo', 'biangbiang'],
-    tags: ['street'],
-  },
-];
+/** Which category an AMap typecode belongs to (a POI can list several codes, separated by `|`). */
+export function categoryOf(typecode: string): PlaceCategory {
+  const code = typecode.split('|')[0] ?? '';
+  if (code.startsWith('05')) return 'food';
+  if (code.startsWith('06')) return 'market';
+  if (code.startsWith('10')) return 'hotel';
+  if (code.startsWith('14') || /^11020[5-7]/.test(code)) return 'culture';
+  if (code.startsWith('1101') && code !== '110105') return 'nature';
+  if (code === '110208') return 'nature';
+  return 'landmark';
+}
 
-export const Places: Place[] = [...Sights, ...Restaurants];
+/** AMap POI ids look like B000A8UIN8 (ids saved before the switch to AMap don't). */
+export const isPlaceId = (value: string) => /^B[0-9A-Z]{9}$/.test(value);
 
-export function getPlace(id: string) {
-  return Places.find((p) => p.id === id);
+export const isCategory = (value: unknown): value is PlaceCategory => typeof value === 'string' && value in CategoryMeta;
+
+// ─── Rows of public.places (places memory) ───────────────────────────────────
+
+/** How public.places groups places: food, attraction, shop or service. */
+export type PlaceKind = 'food' | 'attraction' | 'shop' | 'service' | 'hotel';
+
+export const kindOf = (category: PlaceCategory): PlaceKind =>
+  category === 'food' ? 'food' : category === 'market' ? 'shop' : category === 'hotel' ? 'hotel' : 'attraction';
+
+export type PlaceRow = {
+  id: string;
+  amap_poi_id: string | null;
+  name: string;
+  name_zh: string;
+  category: string;
+  lat: number;
+  lng: number;
+  address: string;
+  tags: string[];
+  amap_rating: number | null;
+};
+
+/** A stored place as the app's Place (without AMap's photos and hours; fetch the AMap id for those). */
+export function placeFromRow(row: PlaceRow): Place {
+  const category: PlaceCategory = row.category === 'food' ? 'food' : row.category === 'shop' ? 'market' : row.category === 'hotel' ? 'hotel' : 'landmark';
+  return {
+    id: row.amap_poi_id ?? row.id,
+    name: row.name,
+    nameZh: row.name_zh || row.name,
+    address: row.address,
+    addressZh: row.address,
+    cityZh: '',
+    districtZh: '',
+    category,
+    typeZh: '',
+    latitude: row.lat,
+    longitude: row.lng,
+    rating: row.amap_rating ?? undefined,
+    tags: row.tags,
+    photos: [],
+  };
 }

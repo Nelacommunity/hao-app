@@ -154,7 +154,7 @@ export function searchLanguages(query: string): Language[] {
   ).sort((a, b) => Number(!fold(a.name).startsWith(q)) - Number(!fold(b.name).startsWith(q)));
 }
 
-/** Any language Gemini understands works, even if it isn't in the list. */
+/** Any language the AI understands works, even if it isn't in the list. */
 export function customLanguage(name: string): Language {
   const clean = name.trim().replace(/\s+/g, ' ');
   const title = clean.charAt(0).toUpperCase() + clean.slice(1);

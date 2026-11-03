@@ -43,13 +43,13 @@ export function providerOrError(): { provider: AgentProvider } | { error: Respon
     return {
       provider: createProvider({
         AI_PROVIDER: process.env.AI_PROVIDER,
-        GEMINI_API_KEY: process.env.GEMINI_API_KEY,
-        GEMINI_MODEL: process.env.GEMINI_MODEL,
-        GEMINI_THINKING_LEVEL: process.env.GEMINI_THINKING_LEVEL,
-        GEMINI_FAST_MODEL: process.env.GEMINI_FAST_MODEL,
-        GEMINI_FAST_THINKING_LEVEL: process.env.GEMINI_FAST_THINKING_LEVEL,
-        GEMINI_ROOM_MODEL: process.env.GEMINI_ROOM_MODEL,
-        GEMINI_ROOM_THINKING_LEVEL: process.env.GEMINI_ROOM_THINKING_LEVEL,
+        QWEN_API_KEY: process.env.QWEN_API_KEY,
+        QWEN_BASE_URL: process.env.QWEN_BASE_URL,
+        QWEN_MODEL: process.env.QWEN_MODEL,
+        QWEN_FAST_MODEL: process.env.QWEN_FAST_MODEL,
+        QWEN_ROOM_MODEL: process.env.QWEN_ROOM_MODEL,
+        QWEN_AUDIO_MODEL: process.env.QWEN_AUDIO_MODEL,
+        QWEN_THINKING: process.env.QWEN_THINKING,
       }),
     };
   } catch (e) {

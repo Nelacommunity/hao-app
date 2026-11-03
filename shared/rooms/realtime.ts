@@ -1,6 +1,6 @@
 // Rooms run over Supabase Realtime. The host app is the room's "server": it keeps the state, calls the AI
 // through the app's API routes, and broadcasts the same ServerMessage shapes the guest page understands.
-// Guests (web page, no account) send ClientMessages. Keep server/public-style guest code in sync:
+// Guests (web page, no account) send ClientMessages. Keep the guest page in sync:
 // public/join/join.js.
 import type { LanguageTarget } from '../ai/types';
 import type { ClientMessage, Role, RoomType, ServerMessage } from './protocol';
@@ -14,10 +14,14 @@ export const EVENTS = { toGuests: 'srv', fromGuest: 'cli' } as const;
 export type HostEnvelope = { to: 'all' | 'local' | 'listeners' | { pid: string } | { lang: string }; msg: ServerMessage };
 
 /** Guest → host. */
-export type GuestEnvelope = { from: string; role: Exclude<Role, 'host'>; language?: LanguageTarget; msg: ClientMessage | { t: 'hello' } };
+/** `name`: what the guest asked to be called (typed on the join page), so the chat shows who said what. */
+export type GuestEnvelope = { from: string; role: Exclude<Role, 'host'>; language?: LanguageTarget; name?: string; msg: ClientMessage | { t: 'hello' } };
 
 /** What each client tracks in channel presence. */
-export type PresenceMeta = { pid: string; role: Role; language?: LanguageTarget; type?: RoomType; at: number };
+export type PresenceMeta = { pid: string; role: Role; language?: LanguageTarget; type?: RoomType; name?: string; at: number };
+
+/** A display name from untrusted input: trimmed, single line, short. */
+export const cleanName = (value: unknown) => (typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, 24) : '');
 
 /** The QR encodes the room code and type, so the guest page needs no server lookup. */
 export const joinPath = (code: string, type: RoomType) => `/join.html?r=${code}&t=${type === 'conversation' ? 'c' : 'b'}`;

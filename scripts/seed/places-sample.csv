@@ -1,0 +1,6 @@
+name,name_zh,amap_poi_id,address,category,tags,nationality,likes
+[PLACE NAME],[中文名],,[ADDRESS IN CHINESE],food,halal;cheap,TZ,12
+[PLACE NAME],[中文名],[AMAP POI ID],,food,like_home;good_for_groups,KE,8
+[PLACE NAME],[中文名],,[ADDRESS IN CHINESE],attraction,,RU,15
+[PLACE NAME],[中文名],[AMAP POI ID],,shop,cheap,UG,6
+[PLACE NAME],[中文名],,[ADDRESS IN CHINESE],service,,RW,5

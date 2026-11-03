@@ -1,7 +1,8 @@
 import type { LanguageTarget } from '@shared/ai/types';
 
 import { authenticate, providerOrError } from '@/lib/server/api';
-import { memoryEnabled, recallMemories, remember, userClient } from '@/lib/server/memory';
+import { memoryEnabled, recallMemories, remember, toolUses, userClient } from '@/lib/server/memory';
+import { allow, tooMany } from '@/lib/server/rate-limit';
 
 type MemoryRequest = {
   language: LanguageTarget;
@@ -13,6 +14,7 @@ export async function POST(request: Request) {
   const user = await authenticate(request);
   const db = userClient(request);
   if (!user || !db) return Response.json({ error: 'Please sign in to use Hao’s memory.' }, { status: 401 });
+  if (!allow(`memory:${user.id}`, 20)) return tooMany();
 
   const created = providerOrError();
   if ('error' in created) return created.error;
@@ -41,7 +43,8 @@ export async function POST(request: Request) {
     });
     await remember(db, turn.new_memories, 'memory');
     const cited = memories.filter((m) => turn.cited_ids.includes(m.id));
-    return Response.json({ answer: turn.answer, cited, saved: turn.new_memories.length });
+    const tools = toolUses({ recalled: memories.length, saved: turn.new_memories });
+    return Response.json({ answer: turn.answer, cited, saved: turn.new_memories.length, tools });
   } catch (e) {
     console.error('Memory provider error', e);
     return Response.json({ error: 'Hao could not search your memory right now. Try again.' }, { status: 502 });

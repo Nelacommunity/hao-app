@@ -3,7 +3,7 @@ import * as Speech from 'expo-speech';
 import { useState } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 
-import { Colors, Radius } from '@/constants/theme';
+import { Colors, Radius, themed } from '@/constants/theme';
 import { useT } from '@/lib/i18n';
 
 type Props = {
@@ -56,10 +56,10 @@ export function SpeakButton({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   button: {
     borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
-});
+}));

@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase';
  * The host side of a room: one Supabase Realtime channel with broadcast (messages) and presence
  * (who is here, and in which language). Supabase handles reconnects.
  */
-export function useHostChannel(code: string | null, type: RoomType, onGuest: (env: GuestEnvelope) => void) {
+export function useHostChannel(code: string | null, type: RoomType, onGuest: (env: GuestEnvelope) => void, name?: string) {
   const [connected, setConnected] = useState(false);
   const [presence, setPresence] = useState<PresenceMeta[]>([]);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -35,7 +35,8 @@ export function useHostChannel(code: string | null, type: RoomType, onGuest: (en
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           // The room type lets a guest who typed the code open the right page.
-          await channel.track({ pid: 'host', role: 'host', type, at: Date.now() } satisfies PresenceMeta);
+          // The guest page shows who they're talking with.
+          await channel.track({ pid: 'host', role: 'host', type, name: name || undefined, at: Date.now() } satisfies PresenceMeta);
           setConnected(true);
         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           setConnected(false);
@@ -46,7 +47,7 @@ export function useHostChannel(code: string | null, type: RoomType, onGuest: (en
       setConnected(false);
       supabase.removeChannel(channel);
     };
-  }, [code, type]);
+  }, [code, type, name]);
 
   const send = useCallback((env: HostEnvelope) => {
     channelRef.current?.send({ type: 'broadcast', event: EVENTS.toGuests, payload: env });

@@ -1,5 +1,5 @@
 import type { AutonomyKey, Budget, DietTag, Preferences, SpiceLevel } from './types';
-import { tx } from '../i18n/tx';
+import { tx } from '../i18n/tx.ts';
 
 export const DefaultPreferences: Preferences = { diet: [], allergies: [], spice: 'medium', budget: 'medium', autonomy: ['spice', 'here_or_to_go'] };
 
@@ -32,8 +32,6 @@ export const BudgetLabels: Record<Budget, { en: string; range: string }> = {
   medium: { en: tx('Mid-range'), range: tx('¥40–120 per person') },
   high: { en: tx('Splurge'), range: tx('over ¥120 per person is fine') },
 };
-
-export const CommonAllergies = ['peanuts', 'tree nuts', 'shellfish', 'fish', 'eggs', 'dairy', 'gluten', 'soy', 'sesame'];
 
 /** Plain-text summary injected into prompts. */
 export function describePreferences(prefs: Preferences | null): string {

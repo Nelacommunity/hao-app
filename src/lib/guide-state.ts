@@ -1,12 +1,16 @@
 // Pure state logic for the Guide chat (no React Native imports, so it can be unit-tested in Node).
 import type { GuideApp } from '@shared/ai/china-guide';
-import type { GuideMessage, GuideTask, GuideTurn } from '@shared/ai/types';
+import type { GuideMessage, GuideTask, GuideTurn, ToolUse } from '@shared/ai/types';
+import type { Story } from '@shared/stories/schema';
 
 export type GuideChatMessage = GuideMessage & {
   quickReplies?: string[];
   phrase?: { zh: string; pinyin: string; meaning: string };
   apps?: GuideApp[];
   handoffGoal?: string;
+  tools?: ToolUse[];
+  /** A Discover story shown as a card under the reply. */
+  story?: Story;
 };
 
 export type GuideState = { messages: GuideChatMessage[]; tasks: GuideTask[]; activeTaskId: string | null };
@@ -46,6 +50,8 @@ export function applyGuideTurn(state: GuideState, userText: string, turn: GuideT
     phrase: turn.phrase_zh ? { zh: turn.phrase_zh, pinyin: turn.phrase_pinyin, meaning: turn.phrase_meaning } : undefined,
     apps: turn.apps,
     handoffGoal: turn.handoff_goal || undefined,
+    tools: turn.tools?.length ? turn.tools : undefined,
+    story: turn.story,
   };
   const user: GuideChatMessage = { role: 'user', text: userText };
   return { tasks, activeTaskId, messages: [...state.messages, user, hao].slice(-60) };

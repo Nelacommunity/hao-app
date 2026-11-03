@@ -1,7 +1,7 @@
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Colors, Radius } from '@/constants/theme';
+import { Colors, Radius, themed } from '@/constants/theme';
 import { useUiTranslationStatus } from '@/lib/i18n';
 import { useTravellerLanguage } from '@/lib/language-store';
 
@@ -23,16 +23,16 @@ export function TranslatingBanner() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   wrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: Colors.ink,
+    backgroundColor: Colors.strong,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: Radius.pill,
   },
   text: { color: '#fff', fontSize: 13, fontWeight: '700' },
-});
+}));

@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { Modal, Pressable, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing, themed } from '@/constants/theme';
 import { customLanguage, Languages, PopularLanguages, searchLanguages, type Language } from '@/lib/languages';
 import { useT } from '@/lib/i18n';
 
@@ -88,7 +88,7 @@ export function LanguagePicker({ visible, selected, onSelect, onClose }: Props) 
                 </View>
                 <Ionicons name="arrow-forward" size={18} color={Colors.red} />
               </Pressable>
-            ) : null
+            ) : undefined
           }
         />
       </SafeAreaView>
@@ -113,7 +113,7 @@ function Row({ language, selected, onPress }: { language: Language; selected: bo
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.paper },
   header: {
     flexDirection: 'row',
@@ -191,4 +191,4 @@ const styles = StyleSheet.create({
   },
   customTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink },
   customSub: { fontSize: 12, color: Colors.muted, marginTop: 2 },
-});
+}));

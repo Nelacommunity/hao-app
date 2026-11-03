@@ -1,6 +1,6 @@
-// WebSocket protocol shared by the rooms server and the app. The vanilla web join page
-// (server/public/join.js) speaks the same messages; keep it in sync when changing this file.
-import type { AudioInput, LanguageTarget, Preferences, RoomAlertType, RoomSpeaker } from '../ai/types';
+// Room messages shared by the host app and the guest join page (public/join/join.js, plain JS), which
+// speaks the same messages over Supabase Realtime; keep it in sync when changing this file.
+import type { AudioInput, ContactKind, LanguageTarget, RoomAlertType, RoomSpeaker } from '../ai/types';
 import { tx } from '../i18n/tx';
 
 export type RoomType = 'conversation' | 'broadcast';
@@ -33,23 +33,11 @@ export type ConvCaption = {
   to?: 'USER' | 'LOCAL';
   text: string;
   at: number;
+  /** Contact details the traveller chose to share: the guest page shows them as a card to copy. */
+  contact?: { kind: ContactKind; value: string };
 };
 export type RoomSummary = { title: string; items: string[]; total: string };
 export type RoomAlert = { type: RoomAlertType; message: string; at: number };
-
-export type CreateRoomRequest = {
-  type: RoomType;
-  userLanguage: LanguageTarget;
-  preferences?: Preferences | null;
-  context?: RoomContext | null;
-};
-
-export type CreateRoomResponse = {
-  roomId: string;
-  hostToken: string;
-  joinUrl: string;
-  expiresAt: number;
-};
 
 export type RoomInfo = { id: string; type: RoomType; expiresAt: number };
 
