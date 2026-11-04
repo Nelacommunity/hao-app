@@ -89,6 +89,12 @@
         "projectId": "e2ade736-2a8a-4165-85c5-3520139c182e"
       }
     },
-    "owner": "acrossnela"
+    "owner": "acrossnela",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/e2ade736-2a8a-4165-85c5-3520139c182e"
+    }
   }
 }
