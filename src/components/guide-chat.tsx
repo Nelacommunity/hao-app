@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Linking, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
 
-import { GuideApps, GuideTopics, type GuideApp } from '@shared/ai/china-guide';
+import type { GuideApp } from '@shared/ai/knowledge';
 import { parsePreferences } from '@shared/ai/preferences';
 import type { GuideTask } from '@shared/ai/types';
 
@@ -14,6 +14,7 @@ import { Cities } from '@/data/places';
 import { useAuth } from '@/lib/auth';
 import { chatTitle, useChatAutosave, type OpenChat } from '@/lib/chats';
 import { applyGuideTurn, askGuide, useGuideState, type GuideChatMessage, type GuideState } from '@/lib/guide';
+import { useGuideContent } from '@/lib/guide-content';
 import { stripMarkdown } from '@/lib/guide-state';
 import type { Language } from '@/lib/languages';
 import { distanceKm, useCurrentLocation } from '@/lib/location';
@@ -34,7 +35,7 @@ export type GuideChatHandle = { send: (text: string, options?: { storyId?: strin
 
 /** Opens the store search for an app (App Store on iOS; the phone's app store on Android). */
 function openStore(app: GuideApp) {
-  const term = encodeURIComponent(GuideApps[app].search);
+  const term = encodeURIComponent(app.store_search);
   const native =
     Platform.OS === 'ios'
       ? `itms-apps://search.itunes.apple.com/WebObjects/MZSearch.woa/wa/search?media=software&term=${term}`
@@ -46,6 +47,7 @@ function openStore(app: GuideApp) {
 export const GuideChat = forwardRef<GuideChatHandle, Props>(function GuideChat({ chat, language, onHandoff, onBusyChange }, ref) {
   const t = useT();
   const { profile, refreshProfile } = useAuth();
+  const guide = useGuideContent(language.code);
   const location = useCurrentLocation();
   const { state, setState, toggleStep, setActiveTask, removeTask } = useGuideState(chat.data);
   const firstAsked = state.messages.find((m) => m.role === 'user')?.text;
@@ -155,9 +157,9 @@ export const GuideChat = forwardRef<GuideChatHandle, Props>(function GuideChat({
             title={empty ? t('Everything for life in China') : t('Pick a topic')}
             body={empty ? t('Pick a topic or ask anything. I’ll make a step-by-step checklist and keep track as you go.') : undefined}>
             <View style={styles.topics}>
-              {GuideTopics.map((topic) => (
+              {guide.topics.map((topic) => (
                 <View key={topic.id} style={styles.topic}>
-                  <Suggestion emoji={topic.emoji} text={t(topic.title)} onPress={() => send(t(topic.starter))} />
+                  <Suggestion emoji={topic.emoji} text={topic.title} onPress={() => send(topic.starter)} />
                 </View>
               ))}
             </View>
@@ -171,6 +173,7 @@ export const GuideChat = forwardRef<GuideChatHandle, Props>(function GuideChat({
             latest={m === lastHao}
             animate={m === lastHao && m.text === fresh}
             language={language}
+            apps={guide.apps}
             onHandoff={onHandoff}
             onQuickReply={(text) => send(text)}
           />
@@ -260,6 +263,7 @@ function MessageView({
   latest,
   animate,
   language,
+  apps,
   onHandoff,
   onQuickReply,
 }: {
@@ -267,11 +271,13 @@ function MessageView({
   latest: boolean;
   animate: boolean;
   language: Language;
+  apps: GuideApp[];
   onHandoff: (goal: string) => void;
   onQuickReply: (text: string) => void;
 }) {
   const t = useT();
   if (message.role === 'user') return <UserMessage text={message.text} />;
+  const suggested = (message.apps ?? []).flatMap((id) => apps.filter((a) => a.id === id));
   return (
     <AssistantMessage text={message.text} animate={animate} speech={language.speech} tools={message.tools}>
       {message.story ? <StoryCard story={message.story} /> : null}
@@ -289,12 +295,12 @@ function MessageView({
         </View>
       ) : null}
 
-      {message.apps?.length ? (
+      {suggested.length ? (
         <View style={styles.apps}>
-          {message.apps.map((a) => (
-            <Pressable key={a} onPress={() => openStore(a)} style={({ pressed }) => [styles.app, pressed && styles.pressed]}>
+          {suggested.map((a) => (
+            <Pressable key={a.id} onPress={() => openStore(a)} style={({ pressed }) => [styles.app, pressed && styles.pressed]}>
               <Ionicons name="download-outline" size={15} color={ChatColors.text} />
-              <Text style={styles.appText}>{t('Get {name}', { name: GuideApps[a].name })}</Text>
+              <Text style={styles.appText}>{t('Get {name}', { name: a.name })}</Text>
             </Pressable>
           ))}
         </View>

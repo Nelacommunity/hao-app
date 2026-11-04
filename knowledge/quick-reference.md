@@ -1,50 +1,9 @@
-// Practical knowledge for foreigners in mainland China, used to ground the Guide agent.
-// Rules and fees change often: the agent is told to say so and to point to the official app.
-// Last reviewed: October 2026. Keep entries short, factual and verifiable.
-import { tx } from '../i18n/tx';
+# Quick reference
+2026-10-31
 
-export type GuideTopicId =
-  | 'wechat'
-  | 'payments'
-  | 'metro'
-  | 'taxi'
-  | 'trains'
-  | 'sim'
-  | 'shopping'
-  | 'hotel'
-  | 'health'
-  | 'delivery'
-  | 'prices';
+Short, verifiable facts sent with every Guide chat, after the recommended order. Rules and fees change often: the agent is told to say so and point to the official app.
 
-export const GuideTopics: { id: GuideTopicId; title: string; emoji: string; starter: string }[] = [
-  { id: 'wechat', title: tx('Set up WeChat'), emoji: '💬', starter: tx('Help me create a WeChat account and get it working.') },
-  { id: 'payments', title: tx('Pay with Alipay / WeChat Pay'), emoji: '💳', starter: tx('Help me set up mobile payments with my foreign card.') },
-  { id: 'metro', title: tx('Metro & buses'), emoji: '🚇', starter: tx('How do I use the metro and buses here?') },
-  { id: 'taxi', title: tx('Taxis & DiDi'), emoji: '🚕', starter: tx('How do I get a taxi or DiDi?') },
-  { id: 'trains', title: tx('Trains & flights'), emoji: '🚄', starter: tx('Help me book a high-speed train ticket.') },
-  { id: 'sim', title: tx('SIM, eSIM & internet'), emoji: '📶', starter: tx('How do I get mobile data and stay connected?') },
-  { id: 'shopping', title: tx('Shopping & bargaining'), emoji: '🛍️', starter: tx('Help me shop: markets, malls and online.') },
-  { id: 'hotel', title: tx('Hotel & registration'), emoji: '🏨', starter: tx('What do I need for hotel check-in and registration?') },
-  { id: 'health', title: tx('Health & emergencies'), emoji: '🏥', starter: tx('What should I do if I get sick or need help urgently?') },
-  { id: 'delivery', title: tx('Food delivery & apps'), emoji: '🛵', starter: tx('How can I order food delivery?') },
-  { id: 'prices', title: tx('Is this price fair?'), emoji: '💴', starter: tx('Is this price fair? A taxi driver wants ¥80 for a short ride.') },
-];
-
-export type GuideApp = 'wechat' | 'alipay' | 'didi' | 'amap' | 'railway12306' | 'trip' | 'meituan' | 'taobao' | 'dianping';
-
-export const GuideApps: Record<GuideApp, { name: string; search: string }> = {
-  wechat: { name: 'WeChat', search: 'WeChat' },
-  alipay: { name: 'Alipay', search: 'Alipay' },
-  didi: { name: 'DiDi', search: 'DiDi Rider' },
-  amap: { name: 'Amap 高德地图', search: 'Amap' },
-  railway12306: { name: 'China Railway 12306', search: '12306' },
-  trip: { name: 'Trip.com', search: 'Trip.com' },
-  meituan: { name: 'Meituan 美团', search: 'Meituan' },
-  taobao: { name: 'Taobao', search: 'Taobao' },
-  dianping: { name: 'Dianping 大众点评', search: 'Dianping' },
-};
-
-export const CHINA_KNOWLEDGE = `
+## Quick reference
 WECHAT (微信 Weixin)
 - Download "WeChat". Sign up with a phone number: foreign numbers usually work. Set the language to English in Me → Settings → General.
 - New accounts often need a security check: an existing WeChat user (account usually 6+ months old, not verified for someone else recently) scans a QR code to verify you. Hotel staff or a friend can help.
@@ -99,4 +58,3 @@ FOOD DELIVERY & DAILY APPS
 
 VISAS (always check official sources; policies change)
 - China offers visa-free entry for many nationalities for limited stays, plus visa-free transit for travellers going to a third country. Eligibility, duration and ports vary: check the National Immigration Administration or your embassy.
-`.trim();

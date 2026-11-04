@@ -389,6 +389,111 @@ export type Database = {
         };
         Relationships: [];
       };
+      guide_apps: {
+        Row: {
+          id: string;
+          name: string;
+          store_search: string;
+          position: number;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          name: string;
+          store_search: string;
+          position?: number;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          store_search?: string;
+          position?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      guide_embassies: {
+        Row: {
+          country: string;
+          phone: string;
+          address: string;
+          region: string;
+          updated_at: string;
+        };
+        Insert: {
+          country: string;
+          phone: string;
+          address: string;
+          region: string;
+          updated_at?: string;
+        };
+        Update: {
+          country?: string;
+          phone?: string;
+          address?: string;
+          region?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      guide_sections: {
+        Row: {
+          id: string;
+          title: string;
+          body: string;
+          kind: string;
+          position: number;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          title: string;
+          body: string;
+          kind?: string;
+          position?: number;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          title?: string;
+          body?: string;
+          kind?: string;
+          position?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      guide_topics: {
+        Row: {
+          id: string;
+          emoji: string;
+          title: string;
+          starter: string;
+          position: number;
+          translations: Json;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          emoji: string;
+          title: string;
+          starter: string;
+          position?: number;
+          translations?: Json;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          emoji?: string;
+          title?: string;
+          starter?: string;
+          position?: number;
+          translations?: Json;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       ui_translations: {
         Row: {
           lang: string;

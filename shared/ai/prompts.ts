@@ -1,7 +1,6 @@
 // Provider-neutral prompts and JSON shapes. Providers translate the schemas into their own format.
 import { describePreferences } from './preferences';
-import { CHINA_KNOWLEDGE, GuideApps } from './china-guide';
-import { knowledgeFor, sectionById } from './knowledge';
+import type { Knowledge } from './knowledge';
 import type { GuideMessage, GuideTask, LanguageTarget, LogEntry, MemoryItem, Preferences, ShownPlace } from './types';
 
 export type JsonSchema =
@@ -41,25 +40,23 @@ const object = (properties: Record<string, JsonSchema>): JsonSchema => ({
   required: Object.keys(properties),
 });
 
-// ─── Knowledge base (knowledge/*.md) ─────────────────────────────────────────
+// ─── Knowledge base (guide_* tables) ─────────────────────────────────────────
 /**
  * The knowledge-base sections relevant to one request, ready to append to the prompt input.
  * `about` is what Hao already knows about the user (memories), used e.g. to find their embassy.
  */
-export function knowledgeContext(query: string, about = '', opts: { limit?: number; maxChars?: number } = {}) {
-  return knowledgeWithSources(query, about, opts).context;
+export function knowledgeContext(kb: Knowledge, query: string, about = '', opts: { limit?: number; maxChars?: number } = {}) {
+  return knowledgeWithSources(kb, query, about, opts).context;
 }
 
 /** The same, plus the titles of the sections used (shown in the chat as "Read the Hao guide"). */
-export function knowledgeWithSources(query: string, about = '', opts: { limit?: number; maxChars?: number } = {}) {
-  const text = knowledgeFor(query, { about, ...opts });
+export function knowledgeWithSources(kb: Knowledge, query: string, about = '', opts: { limit?: number; maxChars?: number } = {}) {
+  const text = kb.forPrompt(query, { about, ...opts });
   return {
     context: text ? `\n\nHao knowledge base (verified by the Hao team; prefer it over general knowledge, and quote its numbers and steps exactly):\n${text}` : '',
     sources: [...text.matchAll(/^## (.+)$/gm)].map((m) => m[1].trim()),
   };
 }
-
-const RECOMMENDED_ORDER = sectionById('how-to-use-this-guide')?.body ?? '';
 
 // ─── Solo interpreter ────────────────────────────────────────────────────────
 export const soloSystemPrompt = (language: string) => `You are Hao, an AI interpreter agent helping a foreign traveller in China.
@@ -165,6 +162,7 @@ Rules:
 - Keep placeholders such as {count} or {name} exactly as written (same braces and name); move them where the grammar needs.
 - Keep unchanged: the name Hao, app and brand names (WeChat, Alipay, DiDi, Amap, Taobao, Meituan, Trip.com, 12306, Google Maps, Apple Maps), emoji, prices (¥), times, numbers and Chinese characters.
 - Place names: use the usual ${target.name} name if there is one (e.g. the Forbidden City), otherwise keep the English or pinyin.
+- Strings the traveller sends to Hao ("Help me…", "How do I…", "Is this price fair?") stay in the traveller's own voice: first person, asking Hao (e.g. French "Aide-moi à…", never "Je vous aide…").
 - Keep punctuation style (… · —) and line breaks. No quotes or notes around the text.`;
 
 export const uiTranslateSchema = object({ translations: { type: 'array', items: str } });
@@ -182,7 +180,7 @@ const placeText = object({ name: str, address: str, type: str, tags: { type: 'ar
 export const placeTranslateSchema = object({ places: { type: 'array', items: placeText } });
 
 // ─── Guide: practical help for living in China ───────────────────────────────
-export const guideSystemPrompt = (language: LanguageTarget, preferences: Preferences | null, city: string | null) => `You are Hao, a friendly, practical guide for a foreigner in mainland China${city ? ` (currently near ${city})` : ''}.
+export const guideSystemPrompt = (language: LanguageTarget, preferences: Preferences | null, city: string | null, kb: Knowledge) => `You are Hao, a friendly, practical guide for a foreigner in mainland China${city ? ` (currently near ${city})` : ''}.
 You help with everything a newcomer needs: WeChat, mobile payments, transport, trains, SIM/internet, shopping, hotels, health and daily apps.
 
 Work like a task coach:
@@ -191,7 +189,7 @@ Work like a task coach:
 - Guide one step at a time in reply. Ask a question when you need to know something (phone type, foreign or Chinese number, city…).
 - quick_replies: 2–4 short things the user is likely to tap next (in ${language.name}), e.g. "Done", "I'm stuck", "What if I don't have a friend to verify?".
 - phrase_*: when the user may need to say something to staff, give one short Mandarin phrase (phrase_zh), its pinyin with tone marks, and its meaning in ${language.name}.
-- apps: only from this list when the user should install or open them: ${Object.keys(GuideApps).join(', ')}.
+- apps: only from this list when the user should install or open them: ${[...kb.apps.keys()].join(', ') || '(none)'}.
 - handoff_goal: when a step needs a real conversation with a local (hotel desk, shop staff, police), write the goal in ${language.name} as the user would tell an interpreter (e.g. "Ask the front desk to verify my new WeChat account by scanning my QR code"). Otherwise empty.
 
 Rules:
@@ -206,11 +204,7 @@ ${describePreferences(preferences)}
 Use what you remember about the traveller (given with each request) so you never ask for something you already know.
 ${memoryRules(language.name)}
 
-For newcomers settling in (students, workers), follow the knowledge base's recommended order:
-${RECOMMENDED_ORDER}
-
-QUICK REFERENCE (last reviewed Oct 2026):
-${CHINA_KNOWLEDGE}`;
+${kb.recommendedOrder ? `\nFor newcomers settling in (students, workers), follow the knowledge base's recommended order:\n${kb.recommendedOrder}\n` : ''}${kb.reference ? `\nQUICK REFERENCE:\n${kb.reference}` : ''}`;
 
 export function formatGuideState(history: GuideMessage[], tasks: GuideTask[], activeTaskId: string | null) {
   const taskText = tasks.length
@@ -270,7 +264,8 @@ export const guideSchema = object({
   phrase_zh: str,
   phrase_pinyin: str,
   phrase_meaning: str,
-  apps: { type: 'array', items: { type: 'string', enum: Object.keys(GuideApps) } },
+  // Ids from guide_apps (listed in the prompt); unknown ids are dropped after the call.
+  apps: { type: 'array', items: str },
   handoff_goal: str,
   memories: newMemories,
   dna: twinUpdatesSchema,

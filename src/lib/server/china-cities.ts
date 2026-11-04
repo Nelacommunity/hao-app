@@ -17,3 +17,21 @@ export function cityInEnglish(zh: string) {
   const base = zh.replace(/(市|特别行政区|地区|自治州|盟)$/, '');
   return NAMES[base] ?? base;
 }
+
+/** "shanghai", "Xi'an", "Urumqi city" → the key used for lookups: lower case letters only, no accents. */
+const fold = (name: string) =>
+  name.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\bcity\b/g, '').replace(/[^a-z]/g, '');
+const CHINESE = new Map(Object.entries(NAMES).map(([zh, en]) => [fold(en), zh]));
+
+/**
+ * "Shanghai" → "上海" for AMap, which ignores a region it can't read and then searches all of China.
+ * Chinese names and unknown cities are returned as they are.
+ */
+export function cityInChinese(name: string) {
+  return CHINESE.get(fold(name)) ?? name;
+}
+
+/** True for a city in the list, in English ("Xi'an") or Chinese ("西安", "西安市"). */
+export function isChinaCity(name: string) {
+  return CHINESE.has(fold(name)) || name.replace(/(市|特别行政区)$/, '') in NAMES;
+}

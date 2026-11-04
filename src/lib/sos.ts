@@ -1,9 +1,6 @@
 // The SOS sheet's data: China's emergency numbers, the traveller's embassy and where they are, in Chinese, so
-// they can read it to an operator (who may not speak English). Everything but the area name is on the device,
-// and the last area found is kept, so the sheet still works without signal.
-import { findEmbassies, type Embassy } from '@shared/ai/knowledge';
-import { Countries } from '@shared/places/countries';
-
+// they can read it to an operator (who may not speak English). The embassy list (useEmbassy in guide-content)
+// and the last area found are kept on the device, so the sheet still works without signal.
 import { tx } from '@/lib/i18n';
 import type { Coords } from '@/lib/location';
 import { nearestCachedPlace } from '@/lib/places';
@@ -25,12 +22,6 @@ export const HELP_PHRASES = [
   { zh: '我的护照丢了', pinyin: 'Wǒ de hùzhào diū le', en: tx('My passport is lost') },
   { zh: '我想联系我的大使馆', pinyin: 'Wǒ xiǎng liánxì wǒ de dàshǐguǎn', en: tx('I want to contact my embassy') },
 ];
-
-/** The traveller's embassy in Beijing, from their nationality (ISO code). */
-export function embassyFor(nationality: string | null | undefined): Embassy | null {
-  const country = nationality ? Countries[nationality] : null;
-  return country ? (findEmbassies(country, 1)[0] ?? null) : null;
-}
 
 /** "From a mobile, dial 010 first": the knowledge base lists Beijing landlines as 010-xxxx xxxx. */
 export const dialable = (phone: string) => phone.replace(/[^\d+]/g, '');

@@ -48,7 +48,6 @@ import {
   type JsonSchema,
 } from './prompts';
 import { emptyTwinUpdates, twinDna, twinMissing } from './twin';
-import { GuideApps } from './china-guide';
 import {
   ProviderError,
   type AgentProvider,
@@ -264,7 +263,7 @@ export function agentProvider(backend: ProviderBackend): AgentProvider {
     async soloTurn(input) {
       const who = input.speaker === 'local' ? 'LOCAL person' : 'TRAVELLER';
       const recentText = input.log.slice(-3).map((e) => ('text' in e ? e.text : e.gloss)).join(' ');
-      const { context: knowledge, sources } = knowledgeWithSources(`${input.text ?? ''} ${recentText}`, input.memories, { limit: 2, maxChars: 7000 });
+      const { context: knowledge, sources } = knowledgeWithSources(input.knowledge, `${input.text ?? ''} ${recentText}`, input.memories, { limit: 2, maxChars: 7000 });
       const turn = await generateJson<AgentTurn>(
         soloSystemPrompt(input.travellerLanguage || 'English'),
         [
@@ -293,9 +292,9 @@ export function agentProvider(backend: ProviderBackend): AgentProvider {
     async guideTurn(input) {
       const lastAsked = input.history.filter((m) => m.role === 'user').slice(-2).map((m) => m.text);
       const active = input.tasks.find((t) => t.id === input.activeTaskId)?.title ?? '';
-      const { context: knowledge, sources } = knowledgeWithSources([input.text, input.text, ...lastAsked, active].join(' '), input.memories);
+      const { context: knowledge, sources } = knowledgeWithSources(input.knowledge, [input.text, input.text, ...lastAsked, active].join(' '), input.memories);
       const turn = await generateJson<GuideTurn>(
-        `${guideSystemPrompt(input.language, input.preferences, input.city)}\n\n${dnaCaptureRules}`,
+        `${guideSystemPrompt(input.language, input.preferences, input.city, input.knowledge)}\n\n${dnaCaptureRules}`,
         [
           {
             text: `What you remember about the traveller:\n${input.memories || '(nothing yet)'}${knowledge}${input.story ? `\n\n${input.story}` : ''}\n\n${formatGuideState(input.history, input.tasks, input.activeTaskId)}\n\nUser now says:\n${input.text}`,
@@ -309,7 +308,7 @@ export function agentProvider(backend: ProviderBackend): AgentProvider {
         task_steps: (turn.task_steps ?? []).slice(0, 8),
         step_updates: (turn.step_updates ?? []).filter((u) => Number.isInteger(u.step_index) && u.step_index >= 0),
         quick_replies: (turn.quick_replies ?? []).slice(0, 4),
-        apps: (turn.apps ?? []).filter((a) => a in GuideApps).slice(0, 3),
+        apps: (turn.apps ?? []).filter((a) => input.knowledge.apps.has(a)).slice(0, 3),
         memories: cleanMemories(turn.memories),
         sources,
         dna: { ...emptyTwinUpdates(), ...(turn.dna ?? {}) },
@@ -429,7 +428,7 @@ export function agentProvider(backend: ProviderBackend): AgentProvider {
       // A photo goes to the omni model; the text of a page a QR code opened is plain text for the smart model.
       const parts: Part[] = input.image
         ? [{ text: `${ask}\n\nThe photo:` }, { image: input.image }]
-        : [{ text: `${ask}\n\nThe page the QR code opened (its visible text, may be cut short):\n${(input.page ?? '').slice(0, 12_000)}` }];
+        : [{ text: `${ask}\n\nThe page the QR code opened (its visible text, then any menu data from its scripts; may be cut short):\n${(input.page ?? '').slice(0, 16_000)}` }];
       const out = await generateJson<ScanResult>(scanSystemPrompt(input.language), parts, scanSchema);
       // Model output is untrusted input to the UI: shape and size only.
       const clip = (v: unknown, n: number) => String(v ?? '').trim().slice(0, n);
@@ -465,7 +464,7 @@ export function agentProvider(backend: ProviderBackend): AgentProvider {
     async roomAgentTurn(input, onSay) {
       const lines = input.recent.map((l) => `[${l.speaker}${l.to ? ` → ${l.to}` : ''}]: ${l.text}`).join('\n');
       // One small section only: room turns are latency-sensitive.
-      const knowledge = knowledgeContext(`${input.said || input.recent.slice(-2).map((l) => l.text).join(' ')} ${input.context ?? ''}`, input.memories, { limit: 1, maxChars: 3500 });
+      const knowledge = knowledgeContext(input.knowledge, `${input.said || input.recent.slice(-2).map((l) => l.text).join(' ')} ${input.context ?? ''}`, input.memories, { limit: 1, maxChars: 3500 });
       let spoken = false;
       const summary = input.summary ? `${input.summary.title}: ${input.summary.items.join('; ')}${input.summary.total ? ` (total ${input.summary.total})` : ''}` : '(none)';
       const turn = await generateJson<RoomAgentTurn>(

@@ -50,7 +50,9 @@ export async function askPlaces(input: {
   const { data } = await supabase.auth.getSession();
   const res = await fetch('/api/places-chat', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token ?? ''}` },
+    // Scans can outlast a proxy's timeout: the server keeps the reply alive (keepAlive in lib/server/api), and errors
+    // then come back in the body.
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token ?? ''}`, 'X-Hao-Keep-Alive': '1' },
     body: JSON.stringify({
       language: input.language,
       text: input.text,
@@ -63,7 +65,7 @@ export async function askPlaces(input: {
     }),
   });
   const body = await res.json().catch(() => null);
-  if (!res.ok || !body) throw new Error(body?.error ?? `Hao could not answer (${res.status})`);
+  if (!res.ok || !body || typeof body.error === 'string') throw new Error(body?.error ?? `Hao could not answer (${res.status})`);
   return body as PlacesChatResponse;
 }
 

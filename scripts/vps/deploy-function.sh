@@ -39,6 +39,11 @@ for dir in "$ROOT"/supabase/functions/*/; do
   FUNCTIONS+=("$name")
 done
 [ ${#FUNCTIONS[@]} -gt 0 ] || { echo "No functions in supabase/functions"; exit 1; }
+# places-chat runs the bundled API route; handler.js is generated, not in git.
+if [ -d "$ROOT/supabase/functions/places-chat" ] && [ ! -f "$ROOT/supabase/functions/places-chat/handler.js" ]; then
+  echo "Missing supabase/functions/places-chat/handler.js: run npm run build:places-function first"
+  exit 1
+fi
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT

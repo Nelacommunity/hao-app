@@ -2,6 +2,7 @@ import { parsePreferences } from '@shared/ai/preferences';
 import type { GuideMessage, GuideTask, LanguageTarget } from '@shared/ai/types';
 
 import { authenticate, providerOrError } from '@/lib/server/api';
+import { loadKnowledge } from '@/lib/server/guide';
 import { memoryContext, remember, toolUses, userClient } from '@/lib/server/memory';
 import { allow, tooMany } from '@/lib/server/rate-limit';
 import { describeStory, relatedStory, storyContext } from '@/lib/server/stories';
@@ -60,13 +61,15 @@ export async function POST(request: Request) {
   const db = userClient(request);
   const language = { code: String(body.language?.code ?? 'en').slice(0, 32), name: String(body.language?.name ?? 'English').slice(0, 64) };
   const city = typeof body.city === 'string' ? body.city.slice(0, 40) : null;
-  const [memory, story] = await Promise.all([
-    memoryContext(request, user.id, text),
+  const [memory, story, knowledge] = await Promise.all([
+    memoryContext(request, user.id, text, db),
     db && typeof body.storyId === 'string' && body.storyId ? storyContext(db, body.storyId).catch(() => null) : null,
+    loadKnowledge(),
   ]);
 
   try {
     const turn = await created.provider.guideTurn({
+      knowledge,
       language,
       preferences: parsePreferences(body.preferences),
       city,

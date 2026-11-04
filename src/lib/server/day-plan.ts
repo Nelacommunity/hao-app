@@ -8,7 +8,7 @@ import type { MapListData, PlaceCardData } from '@/data/place-cards';
 import type { Place } from '@/data/places';
 import type { Database } from '@/lib/database.types';
 import { route } from '@/lib/server/mapbox';
-import type { PlaceLanguage } from '@/lib/server/place-i18n';
+import { localizePlaces, type PlaceLanguage } from '@/lib/server/place-i18n';
 import { searchPlaces } from '@/lib/server/search-places';
 
 type Point = { lat: number; lng: number };
@@ -48,7 +48,9 @@ export async function planDay(
   userId: string,
   input: { query: string; location: Point | null; city: string | null; filters: PlacesFilter[]; language: PlaceLanguage | null; title: string }
 ): Promise<DayPlanResult> {
-  const where = { location: input.location, city: input.city, language: input.language, limit: 8 };
+  // Both searches in Chinese/AMap's English; only the five stops are translated below, in one call, which keeps
+  // the request under the Workers subrequest limit (see request-cache).
+  const where = { location: input.location, city: input.city, language: null, limit: 8 };
   const [sights, food] = await Promise.all([
     searchPlaces(db, userId, { ...where, query: input.query, category: 'attraction' }),
     searchPlaces(db, userId, { ...where, query: '', category: 'food', filters: input.filters }),
@@ -88,16 +90,21 @@ export async function planDay(
     })
   );
 
+  const translated = new Map((await localizePlaces(stops.map((s) => s.place), input.language)).map((p) => [p.id, p]));
+  const shown = stops.map((s) => ({ ...s, place: translated.get(s.place.id) ?? s.place }));
   const byId = new Map([...sights.cards, ...food.cards].map((c) => [c.place.id, c]));
   return {
     plan: {
       title: input.title,
-      stops,
+      stops: shown,
       route: { coords: legs.flatMap((l) => l.coords), approximate },
       distanceM: Math.round(legs.reduce((sum, l) => sum + l.distanceM, 0)),
       durationS: Math.round(legs.reduce((sum, l) => sum + l.durationS, 0)),
     },
-    cards: stops.map((s) => byId.get(s.place.id)).filter((c): c is PlaceCardData => !!c),
+    cards: shown.flatMap((s) => {
+      const card = byId.get(s.place.id);
+      return card ? [{ ...card, place: s.place }] : [];
+    }),
     needsLocation: false,
   };
 }

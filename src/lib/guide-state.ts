@@ -1,12 +1,12 @@
 // Pure state logic for the Guide chat (no React Native imports, so it can be unit-tested in Node).
-import type { GuideApp } from '@shared/ai/china-guide';
 import type { GuideMessage, GuideTask, GuideTurn, ToolUse } from '@shared/ai/types';
 import type { Story } from '@shared/stories/schema';
 
 export type GuideChatMessage = GuideMessage & {
   quickReplies?: string[];
   phrase?: { zh: string; pinyin: string; meaning: string };
-  apps?: GuideApp[];
+  /** Ids of apps in guide_apps. */
+  apps?: string[];
   handoffGoal?: string;
   tools?: ToolUse[];
   /** A Discover story shown as a card under the reply. */

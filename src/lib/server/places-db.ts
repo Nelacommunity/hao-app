@@ -10,6 +10,7 @@ import type { SocialProof } from '@shared/places/ranking';
 import { kindOf, type Place } from '@/data/places';
 import type { Database } from '@/lib/database.types';
 import { adminClient } from '@/lib/server/admin';
+import { memo, profileRow } from '@/lib/server/request-cache';
 
 type Db = SupabaseClient<Database>;
 
@@ -55,10 +56,10 @@ export type UserPlaceProfile = {
 };
 
 export async function loadPlaceProfile(db: Db, userId: string): Promise<UserPlaceProfile> {
-  const { data } = await db.from('profiles').select('nationality, city, university, preferences, loves').eq('id', userId).maybeSingle();
+  const data = await profileRow(db, userId);
   const nationality = data?.nationality ?? null;
   const { data: group } = nationality
-    ? await db.from('country_groups').select('region').eq('nationality', nationality).maybeSingle()
+    ? await memo(db, `region:${nationality}`, async () => db.from('country_groups').select('region').eq('nationality', nationality).maybeSingle())
     : { data: null };
   return {
     nationality,
@@ -92,7 +93,7 @@ export async function socialProof(placeIds: Map<string, string>, nationality: st
 
 /** The user's confirmed ratings, keyed by AMap id. */
 export async function myRatings(db: Db): Promise<Map<string, number | null>> {
-  const { data } = await db.from('visits').select('rating, places(amap_poi_id)').eq('status', 'confirmed').limit(1000);
+  const { data } = await memo(db, 'visits', async () => db.from('visits').select('rating, places(amap_poi_id)').eq('status', 'confirmed').limit(1000));
   const out = new Map<string, number | null>();
   for (const row of data ?? []) {
     const amap = row.places?.amap_poi_id;
@@ -103,6 +104,6 @@ export async function myRatings(db: Db): Promise<Map<string, number | null>> {
 
 /** AMap ids on the user's "Want to go" list. */
 export async function savedIds(db: Db): Promise<Set<string>> {
-  const { data } = await db.from('saved_places').select('place_id').limit(1000);
+  const { data } = await memo(db, 'saved', async () => db.from('saved_places').select('place_id').limit(1000));
   return new Set((data ?? []).map((r) => r.place_id));
 }

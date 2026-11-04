@@ -5,6 +5,7 @@ import { RoomContexts, type RoomContext, type RoomSummary } from '@shared/rooms/
 import { cleanName } from '@shared/rooms/realtime';
 
 import { authenticate, providerOrError } from '@/lib/server/api';
+import { loadKnowledge } from '@/lib/server/guide';
 import { recallMemories, userClient } from '@/lib/server/memory';
 import { allow, tooMany } from '@/lib/server/rate-limit';
 
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
   // Memories are looked up from the recent conversation, so they don't wait for this turn's words.
   const profileReq = db.from('profiles').select('display_name, preferences, memory_enabled').eq('id', user.id).single();
   const recallQuery = [context ? RoomContexts[context].label : '', ...recent.slice(-4).map((l) => l.text)].join(' ');
+  const knowledgeReq = loadKnowledge();
   const memoriesReq = (async () => {
     const { data } = await profileReq;
     return (data?.memory_enabled ?? true) ? formatMemories(await recallMemories(db, recallQuery, 15)) : undefined;
@@ -89,9 +91,10 @@ export async function POST(request: Request) {
           }
         };
         const agentTurn = async (said: string) => {
-          const [{ data: profile }, memories] = await Promise.all([profileReq, memoriesReq]);
+          const [{ data: profile }, memories, knowledge] = await Promise.all([profileReq, memoriesReq, knowledgeReq]);
           const turn = await provider.roomAgentTurn(
             {
+              knowledge,
               userName: profile?.display_name || user.email?.split('@')[0] || 'my friend',
               localName: cleanName(body.localName) || null,
               userLanguage,

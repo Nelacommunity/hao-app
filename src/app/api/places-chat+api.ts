@@ -15,14 +15,15 @@ import { conflictOf } from '@shared/places/ranking';
 
 import type { ChatCard, MapListData, MenuItem, PlaceCardData, PlacesChatResponse, VisitCardData } from '@/data/place-cards';
 import { isPlaceId, placeFromRow, type Place } from '@/data/places';
-import { authenticate, providerOrError } from '@/lib/server/api';
+import { authenticate, keepAlive, providerOrError } from '@/lib/server/api';
 import { AmapError } from '@/lib/server/amap';
+import { isChinaCity } from '@/lib/server/china-cities';
 import { planDay } from '@/lib/server/day-plan';
 import { memoryContext, remember, toolUses, userClient } from '@/lib/server/memory';
 import { localizePlaces, placeLanguage } from '@/lib/server/place-i18n';
 import { loadPlaceProfile, upsertPlaces } from '@/lib/server/places-db';
 import { allow, tooMany } from '@/lib/server/rate-limit';
-import { readQr } from '@/lib/server/qr-page';
+import { MENU_WORDS, readQr } from '@/lib/server/qr-page';
 import { parseLocation, reasonText, searchPlaces } from '@/lib/server/search-places';
 import { captureDna, communityPicks, loadTwin } from '@/lib/server/twin';
 import { createVisit, placeByAmapId, placeByName } from '@/lib/server/visits';
@@ -47,7 +48,46 @@ const DAY = 86_400_000;
 
 const km = (m?: number) => (m === undefined ? '' : m < 1000 ? `${m} m away` : `${(m / 1000).toFixed(1)} km away`);
 
-export async function POST(request: Request) {
+/** Menu scans and day plans can take 20–40 s, so the reply is kept alive for proxies (see keepAlive). */
+export function POST(request: Request) {
+  const remote = supabaseFunctionUrl();
+  return keepAlive(request, () => (remote ? forwardToSupabase(request, remote) : handle(request)));
+}
+
+/**
+ * On EAS Hosting (Cloudflare Workers) a turn makes more outgoing requests than one Worker invocation may (Qwen, AMap,
+ * Supabase, Mapbox), so there the turn runs in the places-chat Edge Function on Supabase instead
+ * (supabase/functions/places-chat, built from this file). Locally and inside that function it runs here.
+ * PLACES_CHAT_URL overrides where it goes; PLACES_CHAT_URL=local always runs it here.
+ */
+function supabaseFunctionUrl(): string | null {
+  const override = process.env.PLACES_CHAT_URL;
+  if (override) return override === 'local' ? null : override;
+  const onWorkers = typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers';
+  const base = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  return onWorkers && base ? `${base.replace(/\/$/, '')}/functions/v1/places-chat` : null;
+}
+
+/** One subrequest: the body and the user's token go to the Edge Function, its answer comes back as it is. */
+async function forwardToSupabase(request: Request, url: string): Promise<Response> {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: request.headers.get('Authorization') ?? '',
+        apikey: process.env.EXPO_PUBLIC_SUPABASE_KEY ?? '',
+      },
+      body: await request.text(),
+    });
+    return new Response(res.body, { status: res.status, headers: { 'Content-Type': 'application/json' } });
+  } catch (e) {
+    console.error('Places chat: the Supabase function did not answer', e);
+    return Response.json({ error: 'Hao could not answer right now. Try again.' }, { status: 502 });
+  }
+}
+
+async function handle(request: Request): Promise<Response> {
   const user = await authenticate(request);
   const db = userClient(request);
   if (!user || !db) return Response.json({ error: 'Please sign in to chat with Hao.' }, { status: 401 });
@@ -82,7 +122,7 @@ export async function POST(request: Request) {
   const location = parseLocation(body.location);
   const city = typeof body.city === 'string' ? body.city.slice(0, 40) : null;
 
-  const [memory, profile, twin] = await Promise.all([memoryContext(request, user.id, text), loadPlaceProfile(db, user.id), loadTwin(db, user.id)]);
+  const [memory, profile, twin] = await Promise.all([memoryContext(request, user.id, text, db), loadPlaceProfile(db, user.id), loadTwin(db, user.id)]);
   const dna = twin ? twinDna(twin) : '';
   const about = [
     dna ? `Hao DNA:\n${dna}` : profile.nationality ? `From: ${Countries[profile.nationality] ?? profile.nationality}` : '',
@@ -134,10 +174,12 @@ export async function POST(request: Request) {
       // Now and then the model calls a page a menu but lists no dishes: one more try before giving up on it.
       if (scan.kind === 'menu' && !scan.items.length) scan = await read();
       const link = found.kind === 'page' ? found.url : undefined;
-      if (found.kind === 'page' && scan.kind === 'menu' && !scan.items.length) {
-        // The page loaded but its menu didn't (drawn later by JavaScript): a screenshot will work.
+      // The page is a menu (the model says so, or it talks about ordering) but no dishes came out: its menu is drawn
+      // by code Hao can't run (a bundled app, a login, a mini program). Say so instead of describing the page.
+      const menuWithoutDishes = scan.kind === 'menu' || (scan.kind !== 'product' && MENU_WORDS.test(found.text));
+      if (found.kind === 'page' && menuWithoutDishes && !(scan.kind === 'menu' && scan.items.length)) {
         return Response.json({
-          text: 'The page behind this QR code doesn’t show its menu to me. Open it, take a screenshot of the menu, and send me the screenshot.',
+          text: 'This QR code opens a menu, but the page loads its dishes in a way I can’t read from here. Open it on your phone, take a screenshot of the menu, and send me the screenshot: I’ll translate every dish and you can order from it.',
           cards: [],
           quick_replies: [],
           tools: [{ tool: 'read_qr', found: 'unreadable', count: 0 }],
@@ -171,10 +213,19 @@ export async function POST(request: Request) {
           `${i + 1}. ${c.place.name}${c.place.nameZh !== c.place.name ? ` (${c.place.nameZh})` : ''} — ${reasonText(c.reason)}${c.place.distanceM !== undefined ? ` — ${km(c.place.distanceM)}` : ''}${c.place.cost ? ` — about ¥${Math.round(c.place.cost)} per person` : ''}${c.myRating === -1 ? ' — the traveller disliked it before' : c.myRating === 1 ? ' — the traveller liked it before' : ''}`
       );
 
+    // Where to search. A city the user named replaces where they are. An area or landmark ("the Bund", "Jing'an") is
+    // searched for in their city, by keyword: AMap only reads city names as a region, and searches all of China when
+    // it can't (so "coffee near the Bund" used to return cafés in Beijing).
+    const homeCity = city || profile.city;
+    const nearCity = plan.near && (isChinaCity(plan.near) || !homeCity) ? plan.near : '';
+    const area = plan.near && !nearCity ? plan.near : '';
+    const where = nearCity || area ? { location: null, city: nearCity || homeCity } : { location, city: location ? null : city };
+    const inArea = (query: string) => (area ? `${area} ${query}`.trim() : query);
+
     /** The place a log_visit or save_place refers to: one shown in the chat, else found by name. */
     const resolvePlace = async (): Promise<Place | null> => {
       const ref = shown.find((p) => p.ref === plan.place_ref);
-      const place = ref ? await placeByAmapId(ref.id) : await placeByName(plan.place_name || text, { location, city: plan.near || city });
+      const place = ref ? await placeByAmapId(ref.id) : await placeByName(plan.place_name || text, { location, city: nearCity || city });
       return place ? (await localizePlaces([place], placeLang))[0] : null;
     };
 
@@ -182,10 +233,9 @@ export async function POST(request: Request) {
     switch (plan.tool) {
       case 'search_places': {
         const result = await searchPlaces(db, user.id, {
-          query: plan.query,
+          query: inArea(plan.query),
           category: plan.category,
-          location: plan.near ? null : location,
-          city: plan.near || (location ? null : city),
+          ...where,
           filters: plan.filters,
           language: placeLang,
         });
@@ -229,10 +279,9 @@ export async function POST(request: Request) {
         if (picks.empty === 'no_data') {
           // Not enough people from their country have shared visits yet: say so, then the best-rated places instead.
           const result = await searchPlaces(db, user.id, {
-            query: plan.query,
+            query: inArea(plan.query),
             category: plan.category || 'food',
-            location: plan.near ? null : location,
-            city: plan.near || (location ? null : cityName),
+            ...(nearCity || area ? where : { location, city: location ? null : cityName }),
             filters: plan.filters,
             language: placeLang,
           });
@@ -251,9 +300,8 @@ export async function POST(request: Request) {
 
       case 'plan_day': {
         const day = await planDay(db, user.id, {
-          query: plan.query,
-          location: plan.near ? null : location,
-          city: plan.near || (location ? null : city),
+          query: inArea(plan.query),
+          ...where,
           filters: plan.filters,
           language: placeLang,
           title: plan.near || city || '',

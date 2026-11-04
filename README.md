@@ -36,8 +36,8 @@ Supabase Edge Function generate-stories (nightly, pg_cron) ── Qwen · AMap p
   and validates every reply; `qwen.ts` is the transport. Text uses `qwen3.8-flash` with strict JSON schemas, speech
   uses `qwen3.8-omni-flash`, voice uses `qwen3-tts-flash`, story illustrations use `qwen-image-3.0-pro`.
 - **Keys stay on the server**: the app only calls its own API routes, which check the Supabase session first.
-- **Knowledge**: answers are grounded in a reviewed knowledge base (`knowledge/`, BM25 retrieval in
-  `shared/ai/knowledge`), including 175 embassies for emergencies.
+- **Knowledge**: answers are grounded in a reviewed knowledge base stored in Supabase (`guide_*` tables, synced from
+  `knowledge/*.md` with `npm run kb:push`; BM25 retrieval in `shared/ai/knowledge`), including 175 embassies for emergencies.
 
 ## Setup
 
@@ -83,8 +83,8 @@ Set the server variables (`QWEN_API_KEY`, `SUPABASE_SECRET_KEY`, `AMAP_KEY`) in 
 | `shared/` | Code shared by the app, the API and the Edge Function: AI provider and prompts, places ranking, stories, rooms protocol, i18n catalog |
 | `supabase/` | Migrations, Edge Function, auth email templates, local config |
 | `public/join` | The QR guest page (plain JS, no app needed) |
-| `knowledge/` | The knowledge base Hao answers from |
-| `scripts/` | Build steps (`kb:build`, `i18n:build`, `stories:facts`), seeding, and VPS tools |
+| `knowledge/` | Editing source of the knowledge base (pushed to the `guide_*` tables) |
+| `scripts/` | Build steps (`kb:push`, `i18n:build`, `stories:facts`), seeding, and VPS tools |
 
 ## How it works
 
@@ -100,6 +100,42 @@ random characters (≈ 49 bits). A conversation turn gets Hao speaking about 4�
 recording ends after 0.7 s of silence, the agent listens to the audio while a parallel call transcribes it (the
 transcript is the caption and a guard against "hearing" prices in noise), and `/api/room/turn` streams the line to
 speak before the rest of the turn. Each turn logs `[turn] stt=… say=… llm=…` in the server console.
+
+### Table QR menus
+In Places, scanning a restaurant's table QR code sends its contents to `/api/places-chat`, which reads it with
+`src/lib/server/qr-page.ts` and has the model translate the menu (dishes, prices, spice, diet warnings, what to say
+to staff). Hao never runs the page's JavaScript; it reads the page in up to three steps and stops at the first that
+lists dishes:
+
+1. **Visible text** of the page (scripts, styles and markup removed).
+2. **Inline script data**: Chinese lines in the page's own `<script>` blocks, for menus kept in the page as an array
+   or a JSON blob and drawn by JavaScript.
+3. **The page's data requests**: up to 3 addresses its inline scripts fetch (`fetch('/api/menu')`, `axios.get(…)`,
+   `$.ajax({ url })`, `xhr.open('GET', …)`, or paths like `/api/…` and `*.json`), requested as the page would. Only
+   JSON replies are used, reduced to the records that hold Chinese text.
+
+Every request goes through the same guard: http(s) on default ports, no IP addresses or local names, every redirect
+checked again, an 8 s timeout and a 1.5 MB cap. WeChat, Alipay, Meituan and Dianping links are recognised without
+being fetched.
+
+**When it can't read the menu.** If the page looks like a menu (the model says so, or it mentions 菜单, 点餐, 下单…) but
+no dishes come out, Hao says so and asks for a screenshot, which works for every menu. This happens when:
+
+- **The QR code opens a mini program** (WeChat, Alipay, Meituan, Dianping). Most Chinese ordering codes do, and a
+  server can't open them at all.
+- **The menu is drawn by a bundled app** (React, Vue, etc., from an external `/assets/index-….js`). External scripts
+  are never downloaded, so the data address inside the bundle is never found.
+- **The data address is built at run time** (`` `/api/menu/${table}` ``, `base + '/dishes'`) or comes from a config
+  request. Only addresses written out in full are followed.
+- **The data needs a session**: a login, a token or signature in the request, a cookie set by an earlier page, a
+  POST body, or a check that the request comes from WeChat's browser.
+- **The data isn't JSON** (HTML fragments, protobuf, encrypted replies), or the menu sits in images only.
+- **The menu is very long**: the model sees about 16,000 characters and lists up to 30 dishes, and occasionally drops
+  a few at the end of a long list.
+
+Handling these would need a headless browser that runs the page (for example Cloudflare Browser Rendering, since the
+API runs on EAS Hosting, which can't run Chrome). That would cost 3–8 s and money per scan, and mean running a
+stranger's page on our infrastructure, so screenshots remain the fallback.
 
 ### Discover stories
 The `generate-stories` Edge Function writes each night's stories per city and language from verified facts
@@ -125,7 +161,7 @@ WGS-84 before they go on the Mapbox map, and routes back again, so pins and rout
 ## Checks
 ```bash
 npx tsc --noEmit && npx expo lint
-npm run test:ranking && npm run test:twin && npm run test:stories
+npm run test:ranking && npm run test:twin && npm run test:stories && npm run test:chat
 ```
 
 ## License

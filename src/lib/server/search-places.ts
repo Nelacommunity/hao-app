@@ -10,6 +10,7 @@ import type { PlaceCardData } from '@/data/place-cards';
 import { CategoryMeta, kindOf, type Place } from '@/data/places';
 import type { Database } from '@/lib/database.types';
 import { searchAround, searchCity } from '@/lib/server/amap';
+import { cityInChinese } from '@/lib/server/china-cities';
 import { localizePlaces, type PlaceLanguage } from '@/lib/server/place-i18n';
 import { cachedSearch, snapNearby, withDistances } from '@/lib/server/place-cache';
 import { loadPlaceProfile, myRatings, savedIds, socialProof, upsertPlaces } from '@/lib/server/places-db';
@@ -99,7 +100,8 @@ export async function searchPlaces(db: SupabaseClient<Database>, userId: string,
   let found: Place[];
   const location = input.location;
   if (input.city) {
-    const city = input.city.slice(0, 20);
+    // Keyed by the Chinese name: "Shanghai" and "上海" are the same search (and old keys held whole-China results).
+    const city = cityInChinese(input.city.slice(0, 20));
     found = await cachedSearch(`city:${city}:${what}:1`, () => searchCity({ city, types, keywords, page: 1 }));
   } else if (location) {
     const radius = RADIUS[category];

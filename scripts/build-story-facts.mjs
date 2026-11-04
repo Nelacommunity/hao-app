@@ -24,7 +24,8 @@ const { CultureItems, Festivals } = await import(new URL('src/data/culture.ts', 
 const { Dishes } = await import(new URL('src/data/food.ts', root).href);
 const { PhraseGroups } = await import(new URL('src/data/phrases.ts', root).href);
 const { Crafts } = await import(new URL('src/data/crafts.ts', root).href);
-const { SECTIONS } = await import(new URL('shared/ai/knowledge/data.generated.ts', root).href);
+const { readKnowledge } = await import(new URL('scripts/knowledge-md.mjs', root).href);
+const SECTIONS = readKnowledge().sections;
 
 const ETIQUETTE = new Set(['chopsticks', 'ganbei', 'hot-water', 'bargaining', 'lucky-numbers', 'hongbao']);
 const KNOWLEDGE = ['culture-etiquette-and-holidays', 'food-dietary-words-and-ordering-phrases', 'weather-and-climate-by-region'];

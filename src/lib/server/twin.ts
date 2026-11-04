@@ -2,7 +2,7 @@
 // to…"), and community picks — places people from the user's country actually went to and liked.
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { applyTwinUpdates, dnaChanges, TWIN_COLUMNS, twinFromRow } from '@shared/ai/twin';
+import { applyTwinUpdates, dnaChanges, twinFromRow } from '@shared/ai/twin';
 import type { PlacesCategory, TwinProfile, TwinUpdates } from '@shared/ai/types';
 import { MIN_GROUP_SIZE } from '@shared/places/config';
 import { conflictOf, type Reason } from '@shared/places/ranking';
@@ -11,6 +11,7 @@ import type { PlaceCardData } from '@/data/place-cards';
 import { kindOf, placeFromRow, type Place } from '@/data/places';
 import type { Database } from '@/lib/database.types';
 import { adminClient } from '@/lib/server/admin';
+import { forgetProfile, profileRow } from '@/lib/server/request-cache';
 import { placesById } from '@/lib/server/amap';
 import { cachedPlacesById, withDistances } from '@/lib/server/place-cache';
 import { localizePlaces, type PlaceLanguage } from '@/lib/server/place-i18n';
@@ -19,7 +20,7 @@ import { myRatings, savedIds } from '@/lib/server/places-db';
 type Db = SupabaseClient<Database>;
 
 export async function loadTwin(db: Db, userId: string): Promise<TwinProfile | null> {
-  const { data } = await db.from('profiles').select(TWIN_COLUMNS).eq('id', userId).maybeSingle();
+  const data = await profileRow(db, userId);
   return data ? twinFromRow(data) : null;
 }
 
@@ -45,6 +46,7 @@ export async function captureDna(db: Db, userId: string, updates: TwinUpdates | 
       wants: after.wants,
     })
     .eq('id', userId);
+  forgetProfile(db, userId);
   if (error) {
     console.warn('[twin] could not save capture:', error.message);
     return [];

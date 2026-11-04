@@ -56,3 +56,45 @@ export function providerOrError(): { provider: AgentProvider } | { error: Respon
     return { error: Response.json({ error: `${(e as Error).message} Add it to .env and restart Expo.` }, { status: 500 }) };
   }
 }
+
+/** Request header an app sends when it can read a kept-alive response (see keepAlive). */
+export const KEEP_ALIVE_HEADER = 'x-hao-keep-alive';
+
+/**
+ * For slow AI routes: proxies in front of the server (the Expo dev tunnel cuts requests after ~30 s with a 504;
+ * Cloudflare after 100 s) close a request that sends nothing for too long. When the app asked for it with
+ * KEEP_ALIVE_HEADER, this answers 200 at once, sends a newline every few seconds while `work` runs, then the JSON
+ * body `work` returned. JSON parsers skip the leading whitespace; a failed request carries its message as
+ * `{ error }` in the body (the status is already sent), which the app checks for. Other callers get `work` as is.
+ */
+export async function keepAlive(request: Request, work: () => Promise<Response>): Promise<Response> {
+  if (request.headers.get(KEEP_ALIVE_HEADER) !== '1') return work();
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const timer = setInterval(() => controller.enqueue(encoder.encode('\n')), 5000);
+      try {
+        const res = await work();
+        const body = await res.text();
+        controller.enqueue(encoder.encode(res.ok ? body : JSON.stringify({ error: errorOf(body, res.status), status: res.status })));
+      } catch (e) {
+        console.error('[keep-alive] request failed', e);
+        controller.enqueue(encoder.encode(JSON.stringify({ error: 'Hao could not answer right now. Try again.', status: 500 })));
+      } finally {
+        clearInterval(timer);
+        controller.close();
+      }
+    },
+  });
+  return new Response(stream, { headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' } });
+}
+
+function errorOf(body: string, status: number) {
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown };
+    if (typeof parsed.error === 'string') return parsed.error;
+  } catch {
+    // Not JSON: fall through.
+  }
+  return `Hao could not answer (${status})`;
+}

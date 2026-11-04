@@ -1,6 +1,6 @@
 // Provider-neutral types shared by the app, the Expo API route and the rooms server.
 // Keep this file free of React Native, DOM and Node-only imports.
-import type { GuideApp } from './china-guide';
+import type { Knowledge } from './knowledge';
 import type { Story } from '../stories/schema';
 
 export type AudioInput = { data: string; mimeType: string };
@@ -69,6 +69,8 @@ export type LogEntry =
   | { kind: 'to_traveller'; text: string; points: string[] };
 
 export type SoloTurnInput = {
+  /** The Hao guide, loaded from the database by the API route. */
+  knowledge: Knowledge;
   speaker: Speaker;
   travellerLanguage: string;
   log: LogEntry[];
@@ -143,6 +145,8 @@ export type RoomAgentTurn = {
 export type RoomTurnLine = { speaker: 'USER' | 'LOCAL' | 'AGENT'; to?: 'USER' | 'LOCAL'; text: string };
 
 export type RoomAgentInput = {
+  /** The Hao guide, loaded from the database by the API route. */
+  knowledge: Knowledge;
   userName: string;
   /** What the local person asked to be called on the join page, if they gave a name. */
   localName?: string | null;
@@ -174,6 +178,8 @@ export type GuideTask = {
 export type GuideMessage = { role: 'user' | 'hao'; text: string };
 
 export type GuideTurnInput = {
+  /** The Hao guide, loaded from the database by the API route. */
+  knowledge: Knowledge;
   language: LanguageTarget;
   preferences: Preferences | null;
   /** Nearest covered city, if known, so advice can be local. */
@@ -206,7 +212,8 @@ export type GuideTurn = {
   phrase_zh: string;
   phrase_pinyin: string;
   phrase_meaning: string;
-  apps: GuideApp[];
+  /** Ids of rows in guide_apps. */
+  apps: string[];
   /** When a step needs talking to a local, what the interpreter should do. */
   handoff_goal: string;
   memories: NewMemory[];

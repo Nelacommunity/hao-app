@@ -6,6 +6,7 @@ import { formatMemories } from '@shared/ai/prompts';
 import type { MemoryItem, MemoryKind, NewMemory, ToolUse } from '@shared/ai/types';
 
 import type { Database } from '@/lib/database.types';
+import { profileRow } from '@/lib/server/request-cache';
 
 type Source = 'interpret' | 'guide' | 'memory' | 'manual';
 
@@ -17,12 +18,14 @@ export function userClient(request: Request): SupabaseClient<Database> | null {
   return createClient<Database>(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { headers: { Authorization: auth } },
+    // No automatic retries: on EAS Hosting each one is another Workers subrequest (see admin.ts).
+    db: { retry: false },
   });
 }
 
 export async function memoryEnabled(db: SupabaseClient<Database>, userId: string) {
-  const { data } = await db.from('profiles').select('memory_enabled').eq('id', userId).single();
-  return data?.memory_enabled ?? true;
+  const row = await profileRow(db, userId);
+  return row?.memory_enabled ?? true;
 }
 
 /** Most relevant memories for `query` plus the most recent ones, without duplicates. */
@@ -49,9 +52,12 @@ export async function remember(db: SupabaseClient<Database>, items: NewMemory[],
   if (error) console.warn('Could not save memories:', error.message);
 }
 
-/** Loads memory context for an agent turn, or nothing if the user turned memory off. */
-export async function memoryContext(request: Request, userId: string, query: string | undefined) {
-  const db = userClient(request);
+/**
+ * Loads memory context for an agent turn, or nothing if the user turned memory off. Pass the route's own `db`
+ * client when it has one, so the profile read is shared (see request-cache).
+ */
+export async function memoryContext(request: Request, userId: string, query: string | undefined, client?: SupabaseClient<Database> | null) {
+  const db = client ?? userClient(request);
   if (!db || !(await memoryEnabled(db, userId))) return { db: null, text: undefined, count: 0 };
   const memories = await recallMemories(db, query);
   return { db, text: formatMemories(memories), count: memories.length };

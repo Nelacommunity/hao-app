@@ -2,6 +2,7 @@
 // routes and city lookup are Mapbox (lib/server/mapbox).
 // Docs: https://lbs.amap.com/api/webservice/guide/api-advanced/newpoisearch
 import { categoryOf, type Place } from '@/data/places';
+import { cityInChinese } from '@/lib/server/china-cities';
 
 const BASE = 'https://restapi.amap.com';
 
@@ -114,7 +115,7 @@ export function searchAround(o: { lat: number; lng: number; radius: number; type
 
 export function searchCity(o: { city: string; types?: string; keywords?: string; page: number }) {
   return query('/v5/place/text', {
-    region: o.city,
+    region: cityInChinese(o.city),
     city_limit: 'true',
     types: o.types,
     keywords: o.keywords,

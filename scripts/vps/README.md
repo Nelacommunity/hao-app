@@ -42,7 +42,14 @@ points the function's `../../../shared/...` imports at it, so `docker-compose.ym
   `STORIES_AI_IMAGES`, `QWEN_IMAGE_MODEL`, `WIKIMEDIA_CONTACT`.
 
 Then, after each change, set `VPS_SSH` and `VPS_DOCKER_DIR` in `.vps.env.local` and run
-`scripts/vps/deploy-function.sh`. It copies `supabase/functions/*` and `shared/`, restarts the container and
+`scripts/vps/deploy-function.sh`.
+
+**places-chat.** The Places chat makes more outgoing requests per turn than Cloudflare Workers (EAS Hosting) allows,
+so on EAS Hosting `/api/places-chat` forwards each turn to the `places-chat` function here. That function is the API
+route itself, bundled by `expo export`: run `npm run build:places-function` before `deploy-function.sh` whenever the
+route or anything it uses changes. It needs no extra secrets: `SUPABASE_URL`, `SUPABASE_ANON_KEY` and
+`SUPABASE_SERVICE_ROLE_KEY` are already in the functions container, and `QWEN_API_KEY` and `AMAP_KEY` are the ones
+generate-stories uses. It copies `supabase/functions/*` and `shared/`, restarts the container and
 checks every function boots. A full test run (calls Qwen):
 `curl -X POST $NEW_API_URL/functions/v1/generate-stories -H "Authorization: Bearer $NEW_SERVICE_KEY" -d '{"dry_run":true}'`.
 

@@ -11,7 +11,8 @@ import { Colors, Radius, Spacing, themed } from '@/constants/theme';
 import { useAuth } from '@/lib/auth';
 import { useT } from '@/lib/i18n';
 import { useCurrentLocation } from '@/lib/location';
-import { dialable, embassyFor, EMERGENCY_NUMBERS, HELP_PHRASES, whereabouts, type Whereabouts } from '@/lib/sos';
+import { useEmbassy } from '@/lib/guide-content';
+import { dialable, EMERGENCY_NUMBERS, HELP_PHRASES, whereabouts, type Whereabouts } from '@/lib/sos';
 
 /** Mount it only while open: it asks for the location when it opens. */
 export function SosSheet({ onClose }: { onClose: () => void }) {
@@ -21,7 +22,7 @@ export function SosSheet({ onClose }: { onClose: () => void }) {
   const { profile } = useAuth();
   const location = useCurrentLocation({ askOnMount: true, precise: true });
   const [where, setWhere] = useState<Whereabouts | null>(null);
-  const embassy = embassyFor(profile?.nationality);
+  const embassy = useEmbassy(profile?.nationality);
 
   const lat = location.coords?.latitude;
   const lng = location.coords?.longitude;

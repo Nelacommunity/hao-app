@@ -2,6 +2,7 @@ import type { AgentRequest } from '@/lib/agent';
 import type { LogEntry, NewMemory, ToolUse } from '@shared/ai/types';
 
 import { authenticate, providerOrError } from '@/lib/server/api';
+import { loadKnowledge } from '@/lib/server/guide';
 import { memoryContext, remember, toolUses } from '@/lib/server/memory';
 import { allow, tooMany } from '@/lib/server/rate-limit';
 
@@ -57,10 +58,11 @@ export async function POST(request: Request) {
   const speaker = body.speaker === 'local' ? 'local' : 'traveller';
 
   // What Hao remembers about this user (empty if they turned memory off).
-  const memory = await memoryContext(request, user.id, text || undefined);
+  const [memory, knowledge] = await Promise.all([memoryContext(request, user.id, text || undefined), loadKnowledge()]);
 
   try {
     const turn = await provider.soloTurn({
+      knowledge,
       speaker,
       travellerLanguage: String(body.travellerLanguage ?? 'English').slice(0, 64),
       log: cleanLog(body.log),
