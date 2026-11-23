@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useEffect } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import Animated, { cancelAnimation, FadeIn, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View, type HostInstance } from 'react-native';
+import Animated, { cancelAnimation, FadeIn, useAnimatedStyle, useSharedValue, withRepeat, withTiming, ZoomIn } from 'react-native-reanimated';
 
 import { ChatColors } from '@/components/chat-ui';
 import { Colors, Radius, Spacing, themed } from '@/constants/theme';
@@ -45,9 +45,19 @@ type Props = {
   };
 };
 
+type Tool = { key: string; icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; disabled?: boolean };
+
 export function ChatComposer({ mode, value, onChangeText, onSend, onOpenMenu, onOpenDiscover, onScan, onScanQr, busy, voice }: Props) {
   const t = useT();
   const hasText = value.trim().length > 0;
+  // Two or more tools (Discover, QR, photo) fold into one button with a menu, so the bar never runs into the send
+  // button on a narrow phone or in a long language.
+  const tools: Tool[] = [];
+  if (onOpenDiscover) tools.push({ key: 'discover', icon: 'play-circle-outline', label: t('Discover: today’s stories'), onPress: onOpenDiscover });
+  if (onScanQr) tools.push({ key: 'qr', icon: 'qr-code-outline', label: t('Scan a menu QR code'), onPress: onScanQr, disabled: busy });
+  // Stays while typing: what they typed goes with the photo ("tell the shopkeeper I want two").
+  if (onScan) tools.push({ key: 'photo', icon: 'camera-outline', label: t('Photo of a menu, sign or something to buy'), onPress: onScan, disabled: busy });
+  const grouped = tools.length >= 2;
 
   if (voice?.recording) return <Recorder voice={voice} />;
 
@@ -83,7 +93,7 @@ export function ChatComposer({ mode, value, onChangeText, onSend, onOpenMenu, on
             <Ionicons name={`${ChatModes[mode].icon}-outline`} size={15} color={ChatColors.text} />
             <Text style={styles.modeChipText}>{t(ChatModes[mode].label)}</Text>
           </Pressable>
-          {onOpenDiscover ? (
+          {onOpenDiscover && !grouped ? (
             <Pressable
               onPress={onOpenDiscover}
               style={({ pressed }) => [styles.modeChip, pressed && styles.pressed]}
@@ -94,7 +104,8 @@ export function ChatComposer({ mode, value, onChangeText, onSend, onOpenMenu, on
             </Pressable>
           ) : null}
           <View style={{ flex: 1 }} />
-          {onScanQr ? (
+          {grouped ? <ToolsMenu tools={tools} /> : null}
+          {onScanQr && !grouped ? (
             <Pressable
               onPress={onScanQr}
               disabled={busy}
@@ -104,8 +115,7 @@ export function ChatComposer({ mode, value, onChangeText, onSend, onOpenMenu, on
               <Ionicons name="qr-code-outline" size={21} color={ChatColors.text} />
             </Pressable>
           ) : null}
-          {/* Stays while typing: what they typed goes with the photo ("tell the shopkeeper I want two"). */}
-          {onScan ? (
+          {onScan && !grouped ? (
             <Pressable
               onPress={onScan}
               disabled={busy}
@@ -137,6 +147,53 @@ export function ChatComposer({ mode, value, onChangeText, onSend, onOpenMenu, on
         </View>
       </View>
     </View>
+  );
+}
+
+/** One button for several tools; opens a small menu above it, closed by a tap anywhere else. */
+function ToolsMenu({ tools }: { tools: Tool[] }) {
+  const t = useT();
+  const button = useRef<HostInstance>(null);
+  const window = useWindowDimensions();
+  const [at, setAt] = useState<{ right: number; bottom: number } | null>(null);
+  const open = () =>
+    button.current?.measureInWindow((x, y, width) => setAt({ right: Math.max(8, window.width - x - width), bottom: window.height - y + 8 }));
+  const close = () => setAt(null);
+  return (
+    <>
+      <Pressable
+        ref={button}
+        onPress={open}
+        style={({ pressed }) => [styles.plus, at && styles.toolsOpen, pressed && styles.pressed]}
+        accessibilityRole="button"
+        accessibilityLabel={t('More tools')}
+        accessibilityState={{ expanded: !!at }}>
+        <Ionicons name="apps-outline" size={20} color={ChatColors.text} />
+      </Pressable>
+      <Modal visible={!!at} transparent animationType="none" onRequestClose={close} statusBarTranslucent navigationBarTranslucent>
+        <Pressable style={StyleSheet.absoluteFill} onPress={close} accessibilityLabel={t('Close')} />
+        {at ? (
+          <Animated.View entering={ZoomIn.duration(140)} style={[styles.toolsCard, { right: at.right, bottom: at.bottom }]}>
+            {tools.map((tool) => (
+              <Pressable
+                key={tool.key}
+                disabled={tool.disabled}
+                onPress={() => {
+                  close();
+                  tool.onPress();
+                }}
+                style={({ pressed }) => [styles.toolRow, tool.disabled && styles.toolDisabled, pressed && styles.toolPressed]}
+                accessibilityRole="button">
+                <Ionicons name={tool.icon} size={20} color={ChatColors.text} />
+                <Text style={styles.toolLabel} numberOfLines={2}>
+                  {tool.label}
+                </Text>
+              </Pressable>
+            ))}
+          </Animated.View>
+        ) : null}
+      </Modal>
+    </>
   );
 }
 
@@ -225,6 +282,27 @@ const styles = themed(() => StyleSheet.create({
     borderColor: ChatColors.border,
   },
   modeChipText: { fontSize: 14, fontWeight: '500', color: ChatColors.text },
+  toolsOpen: { backgroundColor: ChatColors.userBubble },
+  toolsCard: {
+    position: 'absolute',
+    minWidth: 220,
+    maxWidth: 280,
+    paddingVertical: 6,
+    borderRadius: 18,
+    backgroundColor: ChatColors.surface,
+    borderWidth: 1,
+    borderColor: ChatColors.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+    transformOrigin: 'bottom right',
+  },
+  toolRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
+  toolPressed: { backgroundColor: ChatColors.userBubble },
+  toolDisabled: { opacity: 0.4 },
+  toolLabel: { flexShrink: 1, fontSize: 15, color: ChatColors.text },
   action: { width: 36, height: 36, borderRadius: 18, backgroundColor: ChatColors.accent, alignItems: 'center', justifyContent: 'center' },
   actionDisabled: { backgroundColor: ChatColors.userBubble },
   recorder: {

@@ -434,6 +434,7 @@ export const CATALOG: string[] = [
  "Mode: {mode}. Change mode",
  "Money in red envelopes is given at New Year and weddings; today most are sent in WeChat.",
  "Mooncakes make good gifts; try a classic lotus-seed one.",
+ "More tools",
  "More: emergency, chats, QR rooms, language",
  "Morning",
  "Morning tai chi",

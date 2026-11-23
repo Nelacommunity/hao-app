@@ -122,7 +122,7 @@ export default function TwinScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={styles.topBar}>
           <View style={{ flex: 1 }}>
             <Text style={styles.title} accessibilityRole="header">

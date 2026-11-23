@@ -11,7 +11,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Speech from 'expo-speech';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -285,7 +285,7 @@ export default function AgentScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={styles.header}>
           <View style={styles.brand}>
             <View style={styles.mark}>
@@ -347,6 +347,7 @@ export default function AgentScreen() {
             <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={styles.feed} keyboardShouldPersistTaps="handled">
               {log.length === 0 && !busy ? (
                 <ChatWelcome
+                  mood="translate"
                   title={t('What should I say for you?')}
                   body={t('Tell me in your own words. I’ll speak Chinese to the person, listen to their answer and tell you what to do.')}>
                   {SUGGESTIONS.map((s) => (
@@ -369,7 +370,7 @@ export default function AgentScreen() {
                 style={styles.turn}
                 accessibilityRole="button"
                 accessibilityLabel={localTurn ? t('Microphone is for the local person. Tap to switch') : t('Microphone is for you. Tap to switch')}>
-                <View style={[styles.turnDot, { backgroundColor: localTurn ? Colors.jade : ChatColors.text }]} />
+                <View style={[styles.turnDot, { backgroundColor: localTurn ? Colors.jade : ChatColors.mic }]} />
                 <Text style={styles.turnText}>
                   {localTurn ? `${t('Their turn')} · 请对方说话` : t('Your turn')}
                 </Text>
@@ -406,7 +407,7 @@ export default function AgentScreen() {
               ? {
                   recording: !!recordingFor,
                   speakerLabel: recordingFor === 'local' ? `正在听对方 · ${t('Listening to them')}` : t('Listening to you'),
-                  accent: (recordingFor ?? micSpeaker) === 'local' ? Colors.jade : ChatColors.text,
+                  accent: (recordingFor ?? micSpeaker) === 'local' ? Colors.jade : ChatColors.mic,
                   durationMillis: recorderState.durationMillis,
                   metering: recorderState.metering,
                   onStart: startRecording,

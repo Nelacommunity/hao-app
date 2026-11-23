@@ -17,6 +17,7 @@ import Animated, {
 
 import type { ToolUse } from '@shared/ai/types';
 
+import { HaoBuddy, type BuddyMood } from '@/components/hao-buddy';
 import { SpeakButton } from '@/components/speak-button';
 import { Colors, Spacing, themed, themedPalette } from '@/constants/theme';
 import { useT } from '@/lib/i18n';
@@ -36,6 +37,8 @@ export const ChatColors = themedPalette(
     surface: '#FFFFFF',
     /** Send buttons and strong actions. */
     accent: '#00A884',
+    /** The mic when it records you (white icon on it). */
+    mic: '#111B21',
   },
   {
     background: '#0B141A',
@@ -47,6 +50,8 @@ export const ChatColors = themedPalette(
     border: '#2A3942',
     surface: '#1F2C34',
     accent: '#00A884',
+    // Not the text colour here: that is near-white in dark mode, and the mic icon on it is white.
+    mic: '#E5484D',
   }
 );
 
@@ -118,7 +123,7 @@ export function HaoMark({ pulse }: { pulse?: boolean }) {
   );
 }
 
-/** Shown while Hao works on a reply: the pulsing mark and a shimmering label. */
+/** Shown while Hao works on a reply: Hao rocking in its thinking pose and a shimmering label. */
 export function Thinking({ label }: { label?: string }) {
   const t = useT();
   const opacity = useSharedValue(0.45);
@@ -129,7 +134,7 @@ export function Thinking({ label }: { label?: string }) {
   const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
   return (
     <Animated.View entering={FadeIn.duration(200)} style={styles.thinking} accessibilityLiveRegion="polite">
-      <HaoMark pulse />
+      <HaoBuddy mood="thinking" size={40} bubble={false} />
       <Animated.Text style={[styles.thinkingText, style]}>{label ?? t('Thinking…')}</Animated.Text>
     </Animated.View>
   );
@@ -151,11 +156,11 @@ export function ChatError({ message, onRetry }: { message: string; onRetry?: () 
   );
 }
 
-/** Centered greeting for an empty chat, with suggestions under it. */
-export function ChatWelcome({ title, body, children }: { title: string; body?: string; children?: ReactNode }) {
+/** Centered greeting for an empty chat, with Hao (in the pose for this chat) and suggestions under it. */
+export function ChatWelcome({ title, body, mood = 'hello', children }: { title: string; body?: string; mood?: BuddyMood; children?: ReactNode }) {
   return (
     <View style={styles.welcome}>
-      <HaoMark />
+      <HaoBuddy mood={mood} size={112} />
       <Text style={styles.welcomeTitle}>{title}</Text>
       {body ? <Text style={styles.welcomeBody}>{body}</Text> : null}
       {children ? <View style={styles.welcomeExtra}>{children}</View> : null}
@@ -352,7 +357,7 @@ const styles = themed(() => StyleSheet.create({
   actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginRight: -6, marginBottom: -4 },
   mark: { width: 24, height: 24, borderRadius: 7, backgroundColor: Colors.red, alignItems: 'center', justifyContent: 'center' },
   markText: { color: Colors.gold, fontWeight: '900', fontSize: 13 },
-  thinking: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 },
+  thinking: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2, marginLeft: -6 },
   thinkingText: { fontSize: 15, fontWeight: '500', color: ChatColors.soft },
   error: {
     flexDirection: 'row',

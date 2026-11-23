@@ -13,6 +13,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { parsePreferences } from '@shared/ai/preferences';
 
 import { AssistantMessage, ChatColors, ChatError, HaoMark, QuickReplies, Thinking, UserMessage } from '@/components/chat-ui';
+import { HaoBuddy } from '@/components/hao-buddy';
 import { MapListCard } from '@/components/map-list-card';
 import { MenuCard } from '@/components/menu-card';
 import { CardCarousel, PlaceCard, VisitedCard } from '@/components/place-card';
@@ -202,7 +203,7 @@ export const PlacesChat = forwardRef<PlacesChatHandle, Props>(function PlacesCha
     <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={styles.feed} keyboardShouldPersistTaps="handled">
       {empty ? (
         <View style={styles.welcome}>
-          <HaoMark />
+          <HaoBuddy mood="map" size={96} />
           <Animated.Text entering={FadeInDown.duration(300)} style={styles.hello}>
             {greeting(t, name)}
           </Animated.Text>
