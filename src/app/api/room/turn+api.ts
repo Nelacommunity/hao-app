@@ -4,7 +4,7 @@ import type { AudioInput, LanguageTarget, RoomAgentTurn, RoomTurnLine } from '@s
 import { RoomContexts, type RoomContext, type RoomSummary } from '@shared/rooms/protocol';
 import { cleanName } from '@shared/rooms/realtime';
 
-import { authenticate, providerOrError } from '@/lib/server/api';
+import { authenticate, BODY_LIMIT, providerOrError, tooLarge } from '@/lib/server/api';
 import { loadKnowledge } from '@/lib/server/guide';
 import { recallMemories, userClient } from '@/lib/server/memory';
 import { allow, tooMany } from '@/lib/server/rate-limit';
@@ -34,10 +34,12 @@ const lang = (l: LanguageTarget | undefined, fallback: LanguageTarget) =>
 
 /** One live-room turn: speech to text → Hao agent (with profile + memory), streamed as it happens. Nothing is saved here. */
 export async function POST(request: Request) {
+  const big = tooLarge(request, BODY_LIMIT.media);
+  if (big) return big;
   const user = await authenticate(request);
   const db = userClient(request);
   if (!user || !db) return Response.json({ error: 'Please sign in.' }, { status: 401 });
-  if (!allow(user.id, 40)) return tooMany();
+  if (!(await allow(user.id, 40))) return tooMany();
   const created = providerOrError();
   if ('error' in created) return created.error;
   const { provider } = created;

@@ -15,10 +15,11 @@ const BUNDLE = join(ROOT, 'dist/server/_expo/functions/api/places-chat+api.js');
 const OUT = join(ROOT, 'supabase/functions/places-chat/handler.js');
 
 if (!process.argv.includes('--no-export')) {
-  execSync('npx expo export --platform web', {
+  // Two workers and a 4 GB heap: the default (a worker per core plus a 6 GB heap) runs out of memory on an 8 GB machine.
+  execSync('npx expo export --platform web --max-workers 2', {
     cwd: ROOT,
     stdio: 'inherit',
-    env: { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --max-old-space-size=6144`.trim() },
+    env: { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --max-old-space-size=4096`.trim() },
   });
 }
 if (!existsSync(BUNDLE)) {

@@ -1,15 +1,17 @@
 import type { AudioInput, LanguageTarget } from '@shared/ai/types';
 
-import { authenticate, providerOrError } from '@/lib/server/api';
+import { authenticate, BODY_LIMIT, providerOrError, tooLarge } from '@/lib/server/api';
 import { allow, tooMany } from '@/lib/server/rate-limit';
 
 const MANDARIN: LanguageTarget = { code: 'zh', name: 'Mandarin Chinese' };
 
 /** Tour broadcast: transcribe a chunk once and translate it once per language present. */
 export async function POST(request: Request) {
+  const big = tooLarge(request, BODY_LIMIT.media);
+  if (big) return big;
   const user = await authenticate(request);
   if (!user) return Response.json({ error: 'Please sign in.' }, { status: 401 });
-  if (!allow(`caption:${user.id}`, 30)) return tooMany();
+  if (!(await allow(`caption:${user.id}`, 30))) return tooMany();
   const created = providerOrError();
   if ('error' in created) return created.error;
 

@@ -14,7 +14,7 @@ function point(value: string | null) {
 export async function GET(request: Request) {
   const user = await authenticate(request);
   if (!user) return Response.json({ error: 'Please sign in to get directions.' }, { status: 401 });
-  if (!allow(`route:${user.id}`, 60)) return tooMany();
+  if (!(await allow(`route:${user.id}`, 60))) return tooMany();
 
   const params = new URL(request.url).searchParams;
   const mode = params.get('mode') ?? '';

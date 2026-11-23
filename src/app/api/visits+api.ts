@@ -2,7 +2,7 @@
 // session, or added by hand. Reading, confirming and deleting visits happen in the app with supabase-js.
 // POST { placeId: AMap POI id, source: navigation|voice_room|manual, status?: pending|confirmed, rating?, tags?, note?, lang?, langName? }
 //   → { visit: VisitCardData }
-import { authenticate } from '@/lib/server/api';
+import { authenticate, BODY_LIMIT, tooLarge } from '@/lib/server/api';
 import { AmapError } from '@/lib/server/amap';
 import { userClient } from '@/lib/server/memory';
 import { localizePlaces, placeLanguage } from '@/lib/server/place-i18n';
@@ -10,10 +10,12 @@ import { allow, tooMany } from '@/lib/server/rate-limit';
 import { createVisit, isVisitSource, placeByAmapId } from '@/lib/server/visits';
 
 export async function POST(request: Request) {
+  const big = tooLarge(request, BODY_LIMIT.text);
+  if (big) return big;
   const user = await authenticate(request);
   const db = userClient(request);
   if (!user || !db) return Response.json({ error: 'Please sign in first.' }, { status: 401 });
-  if (!allow(`visits:${user.id}`, 30)) return tooMany();
+  if (!(await allow(`visits:${user.id}`, 30))) return tooMany();
 
   let body: Record<string, unknown>;
   try {

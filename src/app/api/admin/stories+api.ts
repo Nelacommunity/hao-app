@@ -5,12 +5,14 @@
 // Stories are written with the service role only; this route checks the caller is an admin first.
 import { adminClient } from '@/lib/server/admin';
 import { authenticate } from '@/lib/server/api';
+import { allow, tooMany } from '@/lib/server/rate-limit';
 import { userClient } from '@/lib/server/memory';
 
 async function admin(request: Request) {
   const user = await authenticate(request);
   const db = userClient(request);
   if (!user || !db) return { error: Response.json({ error: 'Please sign in.' }, { status: 401 }) };
+  if (!(await allow(`admin:${user.id}`, 30))) return { error: tooMany() };
   const { data } = await db.rpc('is_admin');
   if (!data) return { error: Response.json({ error: 'Admins only.' }, { status: 403 }) };
   const service = adminClient();

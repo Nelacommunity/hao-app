@@ -2,7 +2,7 @@
 // traveller's language. The app reads the text aloud.
 // POST { item, language: { code, name } } → { text }
 //   item: { kind: 'story', id } | { kind: 'place', place: {…} } | { kind: 'phrase', phrase: { zh, pinyin, en } }
-import { authenticate, providerOrError } from '@/lib/server/api';
+import { authenticate, BODY_LIMIT, providerOrError, tooLarge } from '@/lib/server/api';
 import { userClient } from '@/lib/server/memory';
 import { allow, tooMany } from '@/lib/server/rate-limit';
 import { describeStory, storyContext } from '@/lib/server/stories';
@@ -16,10 +16,12 @@ const CACHE_MAX = 500;
 const clip = (v: unknown, max = 200) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
 
 export async function POST(request: Request) {
+  const big = tooLarge(request, BODY_LIMIT.text);
+  if (big) return big;
   const user = await authenticate(request);
   const db = userClient(request);
   if (!user || !db) return Response.json({ error: 'Please sign in to hear Hao.' }, { status: 401 });
-  if (!allow(`discover-guide:${user.id}`, 30)) return tooMany();
+  if (!(await allow(`discover-guide:${user.id}`, 30))) return tooMany();
   const created = providerOrError();
   if ('error' in created) return created.error;
 

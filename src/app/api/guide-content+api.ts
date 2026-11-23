@@ -1,6 +1,7 @@
 import { Languages } from '@/lib/languages';
 import { adminClient } from '@/lib/server/admin';
 import { providerOrError } from '@/lib/server/api';
+import { allowIp, tooMany } from '@/lib/server/rate-limit';
 import { loadKnowledge, loadTopics, rememberTopicTranslations, type TopicRow } from '@/lib/server/guide';
 
 type Translation = { title: string; starter: string };
@@ -15,6 +16,8 @@ const RETRY_AFTER_FAILURE_MS = 10 * 60_000;
  * Hao may suggest. Topics are translated once per language with AI and stored on the row for everyone.
  */
 export async function GET(request: Request) {
+  // Public (the app loads it before sign-in) and it can start an AI translation: limited per IP.
+  if (!(await allowIp(request, 'guide-content', 60))) return tooMany();
   const code = (new URL(request.url).searchParams.get('lang') ?? 'en').trim().slice(0, 80);
   const [knowledge, rows] = await Promise.all([loadKnowledge(), loadTopics()]);
   const apps = [...knowledge.apps.values()];
@@ -73,5 +76,5 @@ async function translateTopics(rows: TopicRow[], target: { code: string; name: s
         })
     );
   }
-  rememberTopicTranslations(target.code, byId);
+  await rememberTopicTranslations(target.code, byId);
 }

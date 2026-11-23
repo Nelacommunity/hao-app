@@ -20,7 +20,9 @@ export function placeLanguage(rawCode: unknown, rawName?: unknown): PlaceLanguag
   return code.startsWith('custom:') && custom.length >= 2 ? { code, name: custom } : null;
 }
 
-const BATCH = 25;
+// Places per AI call. The batches run at once and the time goes on writing the reply, so small batches finish
+// sooner: six places into Swahili took 11–16 s in one call.
+const BATCH = 2;
 const MEMORY_MAX = 20_000;
 
 /** `${lang}:${placeId}` → translation, with the English name it was made from. */

@@ -111,14 +111,14 @@ function refreshSearch(key: string, fetch: () => Promise<Place[]>) {
     const list = await fetch();
     const now = Date.now();
     searches.set(key, list.map((p) => p.id), now);
-    await savePlaces(list);
+    // Both writes at once: the traveller is waiting on this search.
     const db = adminClient();
-    if (db) {
-      const { error } = await db
-        .from('place_search_cache')
-        .upsert({ key, ids: list.map((p) => p.id), fetched_at: new Date(now).toISOString() });
+    const saveSearch = async () => {
+      if (!db) return;
+      const { error } = await db.from('place_search_cache').upsert({ key, ids: list.map((p) => p.id), fetched_at: new Date(now).toISOString() });
       if (error) console.warn('[place-cache] could not save search:', error.message);
-    }
+    };
+    await Promise.all([savePlaces(list), saveSearch()]);
     return list;
   });
 }

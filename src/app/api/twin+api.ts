@@ -5,15 +5,17 @@
 import { applyTwinUpdates, TWIN_COLUMNS, twinDna, twinFromRow } from '@shared/ai/twin';
 import { isCountryCode } from '@shared/places/countries';
 
-import { authenticate, providerOrError } from '@/lib/server/api';
+import { authenticate, BODY_LIMIT, providerOrError, tooLarge } from '@/lib/server/api';
 import { userClient } from '@/lib/server/memory';
 import { allow, tooMany } from '@/lib/server/rate-limit';
 
 export async function POST(request: Request) {
+  const big = tooLarge(request, BODY_LIMIT.text);
+  if (big) return big;
   const user = await authenticate(request);
   const db = userClient(request);
   if (!user || !db) return Response.json({ error: 'Please sign in first.' }, { status: 401 });
-  if (!allow(`twin:${user.id}`, 30)) return tooMany();
+  if (!(await allow(`twin:${user.id}`, 30))) return tooMany();
 
   const created = providerOrError();
   if ('error' in created) return created.error;

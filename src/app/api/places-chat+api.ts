@@ -15,7 +15,7 @@ import { conflictOf } from '@shared/places/ranking';
 
 import type { ChatCard, MapListData, MenuItem, PlaceCardData, PlacesChatResponse, VisitCardData } from '@/data/place-cards';
 import { isPlaceId, placeFromRow, type Place } from '@/data/places';
-import { authenticate, keepAlive, providerOrError } from '@/lib/server/api';
+import { authenticate, BODY_LIMIT, keepAlive, providerOrError, tooLarge } from '@/lib/server/api';
 import { AmapError } from '@/lib/server/amap';
 import { isChinaCity } from '@/lib/server/china-cities';
 import { planDay } from '@/lib/server/day-plan';
@@ -50,6 +50,9 @@ const km = (m?: number) => (m === undefined ? '' : m < 1000 ? `${m} m away` : `$
 
 /** Menu scans and day plans can take 20–40 s, so the reply is kept alive for proxies (see keepAlive). */
 export function POST(request: Request) {
+  // Checked here, so it holds on EAS Hosting and in the Edge Function (which runs this same POST).
+  const big = tooLarge(request, BODY_LIMIT.media);
+  if (big) return big;
   const remote = supabaseFunctionUrl();
   return keepAlive(request, () => (remote ? forwardToSupabase(request, remote) : handle(request)));
 }
@@ -91,7 +94,7 @@ async function handle(request: Request): Promise<Response> {
   const user = await authenticate(request);
   const db = userClient(request);
   if (!user || !db) return Response.json({ error: 'Please sign in to chat with Hao.' }, { status: 401 });
-  if (!allow(`places-chat:${user.id}`, 20)) return tooMany();
+  if (!(await allow(`places-chat:${user.id}`, 20))) return tooMany();
 
   const created = providerOrError();
   if ('error' in created) return created.error;
@@ -203,9 +206,14 @@ async function handle(request: Request): Promise<Response> {
       memories: memory.text,
     });
     const tools = toolUses({ recalled: memory.count, saved: [] });
-    const captured = await captureDna(db, user.id, plan.dna);
-    if (captured.length) tools.push({ tool: 'dna', items: captured });
+    // Saved to their Hao DNA while the tool runs; its tool line is added before the reply goes out.
+    const dnaSaved = captureDna(db, user.id, plan.dna).catch((): string[] => []);
     const reply = (results: string) => provider.placesReply({ language, history, text, tool: plan.tool, results, dna });
+    /** Cards with place names in the traveller's language. Runs alongside the reply instead of before it. */
+    const localizeCards = async (list: PlaceCardData[]) => {
+      const places = await localizePlaces(list.map((c) => c.place), placeLang);
+      return list.map((c, i) => ({ ...c, place: places[i] }));
+    };
     const cardsOf = (list: PlaceCardData[]) => list.map((data) => ({ type: data.place.category === 'food' ? 'food' : 'place', data }) as ChatCard);
     const listOf = (list: PlaceCardData[]) =>
       list.map(
@@ -237,7 +245,7 @@ async function handle(request: Request): Promise<Response> {
           category: plan.category,
           ...where,
           filters: plan.filters,
-          language: placeLang,
+          language: null,
         });
         tools.push({ tool: 'search_places', query: plan.query || plan.category || 'places', count: result.cards.length, community: result.community });
         if (result.needsLocation) {
@@ -250,8 +258,8 @@ async function handle(request: Request): Promise<Response> {
           };
           break;
         }
-        const out = await reply(listOf(result.cards).join('\n') || '(no results)');
-        response = { text: out.reply, cards: cardsOf(result.cards), quick_replies: out.quick_replies.length ? out.quick_replies : plan.quick_replies, tools };
+        const [out, cards] = await Promise.all([reply(listOf(result.cards).join('\n') || '(no results)'), localizeCards(result.cards)]);
+        response = { text: out.reply, cards: cardsOf(cards), quick_replies: out.quick_replies.length ? out.quick_replies : plan.quick_replies, tools };
         break;
       }
 
@@ -264,7 +272,7 @@ async function handle(request: Request): Promise<Response> {
           scope: plan.scope || 'nearby',
           location: plan.near ? null : location,
           cityCenter: center,
-          language: placeLang,
+          language: null,
         });
         tools.push({ tool: 'community_picks', count: picks.cards.length, nationality: picks.nationality ?? '' });
         if (picks.empty === 'no_nationality') {
@@ -283,18 +291,24 @@ async function handle(request: Request): Promise<Response> {
             category: plan.category || 'food',
             ...(nearCity || area ? where : { location, city: location ? null : cityName }),
             filters: plan.filters,
-            language: placeLang,
+            language: null,
           });
-          const out = await reply(
-            `Not enough people from the traveller's country have shared visits for this yet (groups of 5 or more only). Say that first, kindly. Then these instead:\n${listOf(result.cards).join('\n') || '(no results)'}`
-          );
-          response = { text: out.reply, cards: cardsOf(result.cards), quick_replies: out.quick_replies, tools, needs_location: result.needsLocation || undefined };
+          const [out, cards] = await Promise.all([
+            reply(
+              `Not enough people from the traveller's country have shared visits for this yet (groups of 5 or more only). Say that first, kindly. Then these instead:\n${listOf(result.cards).join('\n') || '(no results)'}`
+            ),
+            localizeCards(result.cards),
+          ]);
+          response = { text: out.reply, cards: cardsOf(cards), quick_replies: out.quick_replies, tools, needs_location: result.needsLocation || undefined };
           break;
         }
-        const out = await reply(
-          `${plan.scope === 'anywhere' ? 'Across China, for a trip or holiday' : 'Near the traveller'}, places people from their country visited and liked:\n${listOf(picks.cards).join('\n')}`
-        );
-        response = { text: out.reply, cards: cardsOf(picks.cards), quick_replies: out.quick_replies.length ? out.quick_replies : plan.quick_replies, tools };
+        const [out, cards] = await Promise.all([
+          reply(
+            `${plan.scope === 'anywhere' ? 'Across China, for a trip or holiday' : 'Near the traveller'}, places people from their country visited and liked:\n${listOf(picks.cards).join('\n')}`
+          ),
+          localizeCards(picks.cards),
+        ]);
+        response = { text: out.reply, cards: cardsOf(cards), quick_replies: out.quick_replies.length ? out.quick_replies : plan.quick_replies, tools };
         break;
       }
 
@@ -435,6 +449,9 @@ async function handle(request: Request): Promise<Response> {
         response = { text: plan.reply, cards: [], quick_replies: plan.quick_replies, tools };
     }
 
+    // Every branch answers with `tools`, so the Hao DNA line lands in the reply.
+    const captured = await dnaSaved;
+    if (captured.length) tools.push({ tool: 'dna', items: captured });
     return Response.json(response);
   } catch (e) {
     if (e instanceof AmapError) return Response.json({ error: e.message }, { status: 502 });

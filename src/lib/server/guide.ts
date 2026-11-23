@@ -1,11 +1,12 @@
-// The Hao guide (knowledge sections, embassies, apps, topics) from the guide_* tables, cached per server
-// process. Edit knowledge/*.md and run `npm run kb:push`; running servers pick it up within TTL_MS.
+// The Hao guide (knowledge sections, embassies, apps, topics) from the guide_* tables, cached in Redis for every server
+// instance and in this process. Edit knowledge/*.md and run `npm run kb:push`; servers pick it up within TTL_MS.
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import { createKnowledge, EMPTY_KNOWLEDGE, type GuideTopic, type Knowledge, type KnowledgeSection } from '@shared/ai/knowledge';
 
 import type { Database } from '@/lib/database.types';
 import { adminClient } from '@/lib/server/admin';
+import { cached as cachedJson, forget } from '@/lib/server/cache';
 
 const TTL_MS = 5 * 60_000;
 const RETRY_MS = 30_000;
@@ -28,7 +29,19 @@ function readClient(): SupabaseClient<Database> | null {
   return publicClient;
 }
 
+/** The rows in Redis (about 100 KB); bump the version when the columns change. */
+const ROWS_KEY = 'guide:rows:v1';
+type Rows = { sections: KnowledgeSection[]; embassies: { country: string; phone: string; address: string; region: string }[]; apps: { id: string; name: string; store_search: string }[]; topics: TopicRow[] };
+
 async function fetchGuide(): Promise<Loaded> {
+  const rows = await cachedJson<Rows>(ROWS_KEY, TTL_MS / 1000, fetchRows);
+  return {
+    knowledge: createKnowledge({ sections: rows.sections, embassies: rows.embassies, apps: rows.apps }),
+    topics: rows.topics,
+  };
+}
+
+async function fetchRows(): Promise<Rows> {
   const db = readClient();
   if (!db) throw new Error('Supabase is not configured');
   const [sections, embassies, apps, topics] = await Promise.all([
@@ -40,11 +53,9 @@ async function fetchGuide(): Promise<Loaded> {
   const error = sections.error ?? embassies.error ?? apps.error ?? topics.error;
   if (error) throw new Error(error.message);
   return {
-    knowledge: createKnowledge({
-      sections: (sections.data ?? []) as KnowledgeSection[],
-      embassies: embassies.data ?? [],
-      apps: apps.data ?? [],
-    }),
+    sections: (sections.data ?? []) as KnowledgeSection[],
+    embassies: (embassies.data ?? []) as Rows['embassies'],
+    apps: (apps.data ?? []) as Rows['apps'],
     topics: (topics.data ?? []) as TopicRow[],
   };
 }
@@ -80,9 +91,10 @@ export async function loadTopics(): Promise<TopicRow[]> {
   return (await load()).topics;
 }
 
-/** Keeps freshly saved translations in the cached copy. */
-export function rememberTopicTranslations(lang: string, byId: Record<string, { title: string; starter: string }>) {
+/** Keeps freshly saved translations in the cached copy; other instances reload them from the database. */
+export async function rememberTopicTranslations(lang: string, byId: Record<string, { title: string; starter: string }>) {
   for (const topic of cached?.value.topics ?? []) {
     if (byId[topic.id]) topic.translations = { ...topic.translations, [lang]: byId[topic.id] };
   }
+  await forget(ROWS_KEY);
 }

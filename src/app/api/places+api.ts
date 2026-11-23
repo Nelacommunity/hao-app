@@ -17,7 +17,7 @@ const languageOf = (params: URLSearchParams) => placeLanguage(params.get('lang')
 export async function GET(request: Request) {
   const user = await authenticate(request);
   if (!user) return Response.json({ error: 'Please sign in to search places.' }, { status: 401 });
-  if (!allow(`places:${user.id}`, 60)) return tooMany();
+  if (!(await allow(`places:${user.id}`, 60))) return tooMany();
 
   const params = new URL(request.url).searchParams;
   const category = params.get('category');

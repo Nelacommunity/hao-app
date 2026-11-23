@@ -4,9 +4,15 @@ import { createClient } from '@supabase/supabase-js';
 import { createProvider } from '@shared/ai';
 import type { AgentProvider } from '@shared/ai/types';
 
-type AuthUser = NonNullable<Awaited<ReturnType<ReturnType<typeof createClient>['auth']['getUser']>>['data']['user']>;
+import { recall, remember } from '@/lib/server/cache';
+import { hashKey } from '@/lib/server/redis';
 
-// Tokens Supabase confirmed recently, so live-room turns don't pay an auth round trip every time.
+/** What the routes need from the signed-in user. Only this is cached, never the token or the full profile. */
+export type AuthUser = { id: string; email?: string };
+
+// Tokens Supabase confirmed recently: in this process, and in Redis for every instance (EAS Hosting's Workers are
+// short-lived, so the memory copy rarely survives). Keyed by the token's SHA-256, never the token itself. A minute at
+// most, so a signed-out or deleted user loses access within a minute.
 const verified = new Map<string, { user: AuthUser; until: number }>();
 const VERIFY_TTL_MS = 60_000;
 
@@ -21,21 +27,44 @@ function tokenExpiry(token: string) {
 }
 
 /** Only signed-in Hao users can spend AI quota. */
-export async function authenticate(request: Request) {
+export async function authenticate(request: Request): Promise<AuthUser | null> {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const key = process.env.EXPO_PUBLIC_SUPABASE_KEY;
   const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '');
-  if (!url || !key || !token) return null;
+  if (!url || !key || !token || token.length > 8192) return null;
   const now = Date.now();
-  const cached = verified.get(token);
-  if (cached && cached.until > now) return cached.user;
+  const until = Math.min(now + VERIFY_TTL_MS, tokenExpiry(token));
+  const cachedHere = verified.get(token);
+  if (cachedHere && cachedHere.until > now) return cachedHere.user;
+
+  const keyHash = until > now ? `auth:${await hashKey(token)}` : null;
+  const shared = keyHash ? await recall<AuthUser>(keyHash) : null;
+  if (shared?.id) {
+    verified.set(token, { user: shared, until });
+    return shared;
+  }
 
   const supabase = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data.user) return null;
+  const user: AuthUser = { id: data.user.id, email: data.user.email };
   for (const [t, v] of verified) if (v.until <= now) verified.delete(t);
-  verified.set(token, { user: data.user, until: Math.min(now + VERIFY_TTL_MS, tokenExpiry(token)) });
-  return data.user;
+  if (until > now) {
+    verified.set(token, { user, until });
+    if (keyHash) await remember(keyHash, (until - now) / 1000, user);
+  }
+  return user;
+}
+
+export const BODY_LIMIT = { text: 256 * 1024, media: 7 * 1024 * 1024, large: 1024 * 1024 } as const;
+
+/**
+ * A 413 when the request says its body is bigger than `maxBytes`, checked before the body is read so a huge upload
+ * costs nothing. Media routes take a 6 MB photo or recording (base64) plus the rest of the JSON.
+ */
+export function tooLarge(request: Request, maxBytes: number): Response | null {
+  const length = Number(request.headers.get('content-length') ?? 0);
+  return length > maxBytes ? Response.json({ error: 'That request is too large.' }, { status: 413 }) : null;
 }
 
 export function providerOrError(): { provider: AgentProvider } | { error: Response } {

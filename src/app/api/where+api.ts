@@ -1,16 +1,18 @@
 // The city the user is in right now, from GPS (Mapbox reverse geocoding), so nobody has to type it.
 // POST { location: { lat, lng } (GCJ-02) } → { city: "Hangzhou" | null, cityZh: "杭州市" | null, areaZh: "浙江省杭州市上城区" | null }
 // (areaZh is what the SOS sheet reads out to an operator).
-import { authenticate } from '@/lib/server/api';
+import { authenticate, BODY_LIMIT, tooLarge } from '@/lib/server/api';
 import { cityInEnglish } from '@/lib/server/china-cities';
 import { MapboxError, placeAt } from '@/lib/server/mapbox';
 import { allow, tooMany } from '@/lib/server/rate-limit';
 import { parseLocation } from '@/lib/server/search-places';
 
 export async function POST(request: Request) {
+  const big = tooLarge(request, BODY_LIMIT.text);
+  if (big) return big;
   const user = await authenticate(request);
   if (!user) return Response.json({ error: 'Please sign in.' }, { status: 401 });
-  if (!allow(`where:${user.id}`, 10)) return tooMany();
+  if (!(await allow(`where:${user.id}`, 10))) return tooMany();
   const body = await request.json().catch(() => ({}));
   const location = parseLocation(body.location);
   if (!location) return Response.json({ error: 'Send { location: { lat, lng } }' }, { status: 400 });

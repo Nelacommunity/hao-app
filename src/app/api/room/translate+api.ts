@@ -1,11 +1,13 @@
-import { authenticate, providerOrError } from '@/lib/server/api';
+import { authenticate, BODY_LIMIT, providerOrError, tooLarge } from '@/lib/server/api';
 import { allow, tooMany } from '@/lib/server/rate-limit';
 
 /** Tour broadcast: a listener's question, translated into Chinese for the guide. */
 export async function POST(request: Request) {
+  const big = tooLarge(request, BODY_LIMIT.text);
+  if (big) return big;
   const user = await authenticate(request);
   if (!user) return Response.json({ error: 'Please sign in.' }, { status: 401 });
-  if (!allow(`translate:${user.id}`, 30)) return tooMany();
+  if (!(await allow(`translate:${user.id}`, 30))) return tooMany();
   const created = providerOrError();
   if ('error' in created) return created.error;
 

@@ -25,6 +25,9 @@ const env = (name: string) => Deno.env.get(name) || undefined;
   QWEN_ROOM_MODEL: env('QWEN_ROOM_MODEL'),
   QWEN_AUDIO_MODEL: env('QWEN_AUDIO_MODEL'),
   QWEN_THINKING: env('QWEN_THINKING'),
+  // Shared rate limits and caches (src/lib/server/redis.ts); optional.
+  REDIS_REST_URL: env('REDIS_REST_URL'),
+  REDIS_REST_TOKEN: env('REDIS_REST_TOKEN'),
   // The public Mapbox token (day plan routes) is built into handler.js when this is unset.
   EXPO_PUBLIC_MAPBOX_TOKEN: env('MAPBOX_TOKEN'),
 };

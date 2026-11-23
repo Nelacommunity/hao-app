@@ -3,6 +3,8 @@ import { CATALOG, CATALOG_HASH } from '@shared/i18n/catalog.generated';
 import { Languages } from '@/lib/languages';
 import { adminClient } from '@/lib/server/admin';
 import { authenticate, providerOrError } from '@/lib/server/api';
+import { recall, remember } from '@/lib/server/cache';
+import { allow, allowIp, tooMany } from '@/lib/server/rate-limit';
 
 type Strings = Record<string, string>;
 
@@ -11,11 +13,13 @@ const PARALLEL = 4;
 const CUSTOM_PER_USER_PER_DAY = 3;
 const RETRY_AFTER_FAILURE_MS = 10 * 60_000;
 
-// Per server process: finished languages, translations in progress, and recent failures.
+// Per server process: finished languages, translations in progress, and recent failures. Finished languages are also
+// in Redis for every instance (keyed by the catalog hash, so new app text is translated again).
 const cache = new Map<string, Strings>();
 const inFlight = new Map<string, Promise<Strings>>();
 const failedAt = new Map<string, number>();
-const customByUser = new Map<string, number[]>();
+const SHARED_TTL_S = 86_400;
+const sharedKey = (code: string) => `ui:${code}:${CATALOG_HASH}`;
 
 const onlyCatalog = (strings: Strings) => Object.fromEntries(CATALOG.filter((s) => strings[s]).map((s) => [s, strings[s]]));
 
@@ -27,6 +31,8 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = (url.searchParams.get('lang') ?? '').trim().slice(0, 80);
   if (!code || code === 'en') return ok({}, true);
+  // Public (the app loads its text before sign-in): limited per IP.
+  if (!(await allowIp(request, 'ui-strings', 60))) return tooMany();
 
   const known = Languages.find((l) => l.code === code);
   const customName = (url.searchParams.get('name') ?? '').replace(/[^\p{L}\p{M} '-]/gu, '').trim().slice(0, 40);
@@ -35,8 +41,11 @@ export async function GET(request: Request) {
   }
   const language = { code, name: known?.name ?? customName };
 
-  const hit = cache.get(code);
-  if (hit) return ok(hit, true);
+  const hit = cache.get(code) ?? (await recall<Strings>(sharedKey(code)));
+  if (hit) {
+    cache.set(code, hit);
+    return ok(hit, true);
+  }
 
   const db = adminClient();
   if (!db) {
@@ -50,6 +59,7 @@ export async function GET(request: Request) {
   if (row?.catalog_hash === CATALOG_HASH) {
     const strings = onlyCatalog(stored);
     cache.set(code, strings);
+    await remember(sharedKey(code), SHARED_TTL_S, strings);
     return ok(strings, true);
   }
 
@@ -59,10 +69,9 @@ export async function GET(request: Request) {
     // A custom language costs tokens for a language nobody else may use: signed-in users, a few per day.
     const user = await authenticate(request);
     if (!user) return Response.json({ error: 'Sign in to translate the app into a custom language.' }, { status: 401 });
-    if (!inFlight.has(code) && !row) {
-      const recent = (customByUser.get(user.id) ?? []).filter((t) => Date.now() - t < 86_400_000);
-      if (recent.length >= CUSTOM_PER_USER_PER_DAY) return Response.json({ error: 'Too many new languages today.' }, { status: 429 });
-      customByUser.set(user.id, [...recent, Date.now()]);
+    // Counted in Redis, so the limit holds across every server instance.
+    if (!inFlight.has(code) && !row && !(await allow(`ui-custom:${user.id}`, CUSTOM_PER_USER_PER_DAY, 86_400))) {
+      return Response.json({ error: 'Too many new languages today.' }, { status: 429 });
     }
   }
 
@@ -120,7 +129,10 @@ async function translateMissing(language: { code: string; name: string }, stored
   if (error) console.error('[ui-strings] could not save', language.code, error.message);
   console.log(`[ui-strings] ${language.code}: translated ${missing.length} strings in ${Date.now() - t0} ms${failed ? ' (some failed)' : ''}`);
   if (failed) failedAt.set(language.code, Date.now());
-  else cache.set(language.code, result);
+  else {
+    cache.set(language.code, result);
+    await remember(sharedKey(language.code), SHARED_TTL_S, result);
+  }
   return result;
 }
 

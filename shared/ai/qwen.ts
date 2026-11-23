@@ -88,6 +88,9 @@ export function qwenProvider(config: QwenConfig): AgentProvider {
       const res = await fetchWithRetry(model, () =>
         fetch(`${baseUrl}/chat/completions`, {
           method: 'POST',
+          // A stuck call (a model that keeps generating, a stalled connection) fails instead of freezing the chat.
+          // Photos, audio and menus take longest.
+          signal: AbortSignal.timeout(hasAudio ? 90_000 : 60_000),
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
           body: JSON.stringify({
             model,

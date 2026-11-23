@@ -125,6 +125,8 @@ export async function fetchWithRetry(label: string, send: () => Promise<Response
   let res = await attempt();
   for (const wait of [700, 1500]) {
     if (res instanceof Response && !TRANSIENT.has(res.status)) break;
+    // Out of time (see the timeout in qwen.ts): asking again would only make the traveller wait longer.
+    if (!(res instanceof Response) && res.name === 'TimeoutError') break;
     const why = res instanceof Response ? res.status : (res as { cause?: { code?: string } }).cause?.code ?? res.message;
     console.warn(`[ai] ${label} failed (${why}); retrying in ${wait}ms`);
     await new Promise((r) => setTimeout(r, wait));

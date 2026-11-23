@@ -1,17 +1,19 @@
 // Today's Discover stories for the signed-in user, 15–20 of them, ranked by shared/stories/ranking.ts.
 // POST { language?: string, location?: { lat, lng } (GCJ-02) } → { day, city, stories }
 // Story events (view, complete, skip, …) are written by the app straight to public.story_events in batches.
-import { authenticate } from '@/lib/server/api';
+import { authenticate, BODY_LIMIT, tooLarge } from '@/lib/server/api';
 import { userClient } from '@/lib/server/memory';
 import { allow, tooMany } from '@/lib/server/rate-limit';
 import { parseLocation } from '@/lib/server/search-places';
 import { discoverFeed } from '@/lib/server/stories';
 
 export async function POST(request: Request) {
+  const big = tooLarge(request, BODY_LIMIT.text);
+  if (big) return big;
   const user = await authenticate(request);
   const db = userClient(request);
   if (!user || !db) return Response.json({ error: 'Please sign in to see Discover.' }, { status: 401 });
-  if (!allow(`discover:${user.id}`, 20)) return tooMany();
+  if (!(await allow(`discover:${user.id}`, 20))) return tooMany();
 
   let body: Record<string, unknown>;
   try {

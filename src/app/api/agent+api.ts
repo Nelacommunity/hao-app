@@ -1,7 +1,7 @@
 import type { AgentRequest } from '@/lib/agent';
 import type { LogEntry, NewMemory, ToolUse } from '@shared/ai/types';
 
-import { authenticate, providerOrError } from '@/lib/server/api';
+import { authenticate, BODY_LIMIT, providerOrError, tooLarge } from '@/lib/server/api';
 import { loadKnowledge } from '@/lib/server/guide';
 import { memoryContext, remember, toolUses } from '@/lib/server/memory';
 import { allow, tooMany } from '@/lib/server/rate-limit';
@@ -31,11 +31,13 @@ function cleanLog(log: unknown): LogEntry[] {
 }
 
 export async function POST(request: Request) {
+  const big = tooLarge(request, BODY_LIMIT.media);
+  if (big) return big;
   const user = await authenticate(request);
   if (!user) {
     return Response.json({ error: 'Please sign in to use the Hao Agent.' }, { status: 401 });
   }
-  if (!allow(`agent:${user.id}`, 40)) return tooMany();
+  if (!(await allow(`agent:${user.id}`, 40))) return tooMany();
 
   const created = providerOrError();
   if ('error' in created) return created.error;

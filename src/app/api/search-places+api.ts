@@ -5,7 +5,7 @@
 import type { PlacesCategory, PlacesFilter } from '@shared/ai/types';
 import { PLACES_CATEGORIES, PLACES_FILTERS } from '@shared/ai/prompts';
 
-import { authenticate } from '@/lib/server/api';
+import { authenticate, BODY_LIMIT, tooLarge } from '@/lib/server/api';
 import { AmapError } from '@/lib/server/amap';
 import { userClient } from '@/lib/server/memory';
 import { placeLanguage } from '@/lib/server/place-i18n';
@@ -23,10 +23,12 @@ type Body = {
 };
 
 export async function POST(request: Request) {
+  const big = tooLarge(request, BODY_LIMIT.text);
+  if (big) return big;
   const user = await authenticate(request);
   const db = userClient(request);
   if (!user || !db) return Response.json({ error: 'Please sign in to search places.' }, { status: 401 });
-  if (!allow(`places:${user.id}`, 60)) return tooMany();
+  if (!(await allow(`places:${user.id}`, 60))) return tooMany();
 
   let body: Body;
   try {

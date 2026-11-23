@@ -1,7 +1,7 @@
 import { parsePreferences } from '@shared/ai/preferences';
 import type { GuideMessage, GuideTask, LanguageTarget } from '@shared/ai/types';
 
-import { authenticate, providerOrError } from '@/lib/server/api';
+import { authenticate, BODY_LIMIT, providerOrError, tooLarge } from '@/lib/server/api';
 import { loadKnowledge } from '@/lib/server/guide';
 import { memoryContext, remember, toolUses, userClient } from '@/lib/server/memory';
 import { allow, tooMany } from '@/lib/server/rate-limit';
@@ -41,9 +41,11 @@ function cleanTasks(tasks: unknown): GuideTask[] {
 }
 
 export async function POST(request: Request) {
+  const big = tooLarge(request, BODY_LIMIT.text);
+  if (big) return big;
   const user = await authenticate(request);
   if (!user) return Response.json({ error: 'Please sign in to use the Hao Guide.' }, { status: 401 });
-  if (!allow(`guide:${user.id}`, 20)) return tooMany();
+  if (!(await allow(`guide:${user.id}`, 20))) return tooMany();
 
   const created = providerOrError();
   if ('error' in created) return created.error;
@@ -67,6 +69,10 @@ export async function POST(request: Request) {
     loadKnowledge(),
   ]);
 
+  // A story about what was asked ("What's this festival?") is shown as a card, unless one is already open. It only
+  // needs the question, so it's looked up while Hao writes the answer.
+  const related = story || !db ? Promise.resolve(null) : relatedStory(db, text, { city, language: language.code.split('-')[0] }).catch(() => null);
+
   try {
     const turn = await created.provider.guideTurn({
       knowledge,
@@ -80,9 +86,12 @@ export async function POST(request: Request) {
       memories: memory.text,
       story: story ? describeStory(story) : undefined,
     });
-    if (memory.db) await remember(memory.db, turn.memories, 'guide');
-    // What the user said about themselves ("I love…", "I want to…") goes into their Hao DNA.
-    const captured = db ? await captureDna(db, user.id, turn.dna) : [];
+    // New memories, and what the user said about themselves ("I love…", "I want to…") for their Hao DNA, saved together.
+    const [, captured, card] = await Promise.all([
+      memory.db ? remember(memory.db, turn.memories, 'guide') : null,
+      db ? captureDna(db, user.id, turn.dna) : [],
+      related,
+    ]);
     const tools = toolUses({ sources: turn.sources, recalled: memory.count, saved: memory.db ? turn.memories : [] });
     if (turn.task_id && turn.task_steps.length) {
       const created = !tasks.some((t) => t.id === turn.task_id);
@@ -91,8 +100,6 @@ export async function POST(request: Request) {
       const task = tasks.find((t) => t.id === turn.step_updates[0].task_id);
       if (task) tools.push({ tool: 'checklist', title: task.title, created: false });
     }
-    // A story about what was asked ("What's this festival?") is shown as a card, unless one is already open.
-    const card = story || !db ? null : await relatedStory(db, text, { city, language: language.code.split('-')[0] }).catch(() => null);
     if (story) tools.push({ tool: 'story', title: story.story.title });
     if (captured.length) tools.push({ tool: 'dna', items: captured });
     return Response.json({ ...turn, tools, story: card ?? undefined });
